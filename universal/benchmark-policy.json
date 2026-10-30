@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "score_version": 1,
+  "units": {
+    "duration": "seconds",
+    "throughput": "transitions/second",
+    "latency": "seconds",
+    "memory": "bytes (tracemalloc peak; not RSS)"
+  },
+  "targets": {
+    "stationary_loop_transitions_per_second": 100000,
+    "right_growing_tape_transitions_per_second": 10000,
+    "bidirectional_scan_transitions_per_second": 10000,
+    "binary_carry_transitions_per_second": 10000,
+    "checkpoint_median_seconds_max": 0.05,
+    "checkpoint_p95_seconds_max": 0.1,
+    "restore_median_seconds_max": 0.05
+  },
+  "weights": {
+    "stationary_loop": 0.2,
+    "right_growing_tape": 0.2,
+    "bidirectional_scan": 0.2,
+    "binary_carry": 0.2,
+    "checkpoint_median": 0.1,
+    "checkpoint_p95": 0.1,
+    "restore_median": 0.1
+  },
+  "scoring": {
+    "method": "weighted_arithmetic_mean",
+    "throughput_points": "min(100, 100 * measured_transitions_per_second / target_transitions_per_second)",
+    "latency_points": "100 when measured_seconds <= target_seconds, otherwise 100 * target_seconds / measured_seconds",
+    "failure": "Any failed correctness gate, workload expected-output comparison, or checkpoint continuation comparison forces total score to 0 and process exit status 1."
+  },
+  "target_status": "Operator-defined engineering targets; not industry benchmarks or claims."
+}

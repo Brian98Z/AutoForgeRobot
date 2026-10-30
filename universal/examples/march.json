@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "states": ["march"],
+  "symbols": ["_", "1"],
+  "blank": "_",
+  "start": "march",
+  "halt": [],
+  "transitions": [
+    {"state":"march","read":"_","next":"march","write":"1","move":"R"},
+    {"state":"march","read":"1","next":"march","write":"1","move":"R"}
+  ]
+}

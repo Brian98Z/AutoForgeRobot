@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "id": "addition-basic",
+  "goal": "Return the signed 64-bit sum of the two inputs.",
+  "public_cases": [
+    {"input": [0, 0], "expected": 0},
+    {"input": [1, 2], "expected": 3},
+    {"input": [-7, 3], "expected": -4},
+    {"input": [19, -24], "expected": -5},
+    {"input": [-31, -12], "expected": -43},
+    {"input": [9007199254740993, 8], "expected": 9007199254741001},
+    {"input": [9223372036854775807, 1], "expected": -9223372036854775808},
+    {"input": [-9223372036854775808, -1], "expected": 9223372036854775807}
+  ],
+  "holdout_cases": [
+    {"input": [123456789, -987654321], "expected": -864197532},
+    {"input": [9223372036854775807, 9223372036854775807], "expected": -2}
+  ],
+  "max_rounds": 5
+}

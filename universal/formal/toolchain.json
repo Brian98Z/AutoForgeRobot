@@ -1,0 +1,12 @@
+{
+  "tool": "Lean",
+  "version": "4.35.0",
+  "platform": "windows-x64",
+  "release_api": "https://api.github.com/repos/leanprover/lean4/releases/410881210",
+  "download_url": "https://github.com/leanprover/lean4/releases/download/v4.35.0/lean-4.35.0-windows.zip",
+  "archive_bytes": 902262322,
+  "archive_sha256": "5fc033e93e1a7bc59c5ebf311103d2c9cd18d4b3eddda4ffa3414e8adb0ef79e",
+  "archive_digest_verified": true,
+  "local_executable": "runtime/lean-4.35.0-windows/bin/lean.exe",
+  "scope": "formal model proof terms; not Python source refinement"
+}

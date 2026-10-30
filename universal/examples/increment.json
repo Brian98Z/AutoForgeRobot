@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "states": ["scan", "carry", "done"],
+  "symbols": ["_", "0", "1"],
+  "blank": "_",
+  "start": "scan",
+  "halt": ["done"],
+  "transitions": [
+    {"state":"scan","read":"0","next":"scan","write":"0","move":"R"},
+    {"state":"scan","read":"1","next":"scan","write":"1","move":"R"},
+    {"state":"scan","read":"_","next":"carry","write":"_","move":"L"},
+    {"state":"carry","read":"1","next":"carry","write":"0","move":"L"},
+    {"state":"carry","read":"0","next":"done","write":"1","move":"S"},
+    {"state":"carry","read":"_","next":"done","write":"1","move":"S"}
+  ]
+}

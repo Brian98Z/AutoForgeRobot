@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "id": "absolute-difference",
+  "goal": "Return the absolute difference of the signed 64-bit inputs, using wrapping subtraction semantics.",
+  "public_cases": [
+    {"input": [0, 0], "expected": 0},
+    {"input": [5, 2], "expected": 3},
+    {"input": [2, 5], "expected": 3},
+    {"input": [-8, -3], "expected": 5},
+    {"input": [-3, -8], "expected": 5},
+    {"input": [-100, 37], "expected": 137},
+    {"input": [37, -100], "expected": 137},
+    {"input": [9007199254740993, 9007199254740988], "expected": 5}
+  ],
+  "holdout_cases": [
+    {"input": [1234567890123, -9876543210], "expected": 1244444433333},
+    {"input": [-9223372036854775808, 0], "expected": -9223372036854775808}
+  ],
+  "max_rounds": 5
+}

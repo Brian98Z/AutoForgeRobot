@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "entrypoint": "main.py",
+  "scenarios": [
+    {
+      "name": "inventory-create-add-list-and-reject-negative",
+      "requests": [
+        {"op": "list"},
+        {"op": "add", "sku": "widget-1", "quantity": 8},
+        {"op": "list"},
+        {"op": "add", "sku": "widget-2", "quantity": -1},
+        {"op": "list"}
+      ],
+      "expected": [
+        {"ok": true, "items": []},
+        {"ok": true, "sku": "widget-1", "quantity": 8},
+        {"ok": true, "items": [{"sku": "widget-1", "quantity": 8}]},
+        {"ok": false, "error": "invalid_item"},
+        {"ok": true, "items": [{"sku": "widget-1", "quantity": 8}]}
+      ]
+    }
+    ,{
+      "name": "upsert-sorting-and-type-boundaries",
+      "requests": [
+        {"op":"add","sku":"z","quantity":1},
+        {"op":"add","sku":"a","quantity":9223372036854775807},
+        {"op":"add","sku":"z","quantity":0},
+        {"op":"add","sku":"z","quantity":true},
+        {"op":"add","sku":"a","quantity":9223372036854775808},
+        {"op":"add","sku":"","quantity":3},
+        {"op":"delete","sku":"a"},
+        {"op":"list"}
+      ],
+      "expected": [
+        {"ok":true,"sku":"z","quantity":1},
+        {"ok":true,"sku":"a","quantity":9223372036854775807},
+        {"ok":true,"sku":"z","quantity":0},
+        {"ok":false,"error":"invalid_item"},
+        {"ok":false,"error":"invalid_item"},
+        {"ok":false,"error":"invalid_item"},
+        {"ok":false,"error":"invalid_item"},
+        {"ok":true,"items":[{"sku":"a","quantity":9223372036854775807},{"sku":"z","quantity":0}]}
+      ]
+    }
+  ]
+}

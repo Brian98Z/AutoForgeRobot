@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "contradictory-public-observations",
+  "goal": "Match every supplied public observation exactly.",
+  "public_cases": [
+    {"input": [1, 2], "expected": 3},
+    {"input": [1, 2], "expected": 4},
+    {"input": [0, 0], "expected": 0}
+  ],
+  "holdout_cases": [
+    {"input": [7, 9], "expected": 16}
+  ],
+  "max_rounds": 3
+}
