@@ -22,6 +22,10 @@ python application_capabilities.py matrix
 
 Configure an OpenAI-compatible model with `AUTOFORGE_API_BASE`, `AUTOFORGE_MODEL`, and `AUTOFORGE_API_KEY` when required.
 
+## Download
+
+Windows x64 single-file controller: [latest release](https://github.com/Brian98Z/AutoForgeRobot/releases/latest) (`autoforge-0.1.0-windows-x64.exe`, self-signed, SHA-256 in `SHA256SUMS.txt`). Source archives attached by GitHub are not installers.
+
 ## Repository Layout
 
 | Path | Purpose |
