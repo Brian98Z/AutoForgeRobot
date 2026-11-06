@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "health_path": "/health",
+  "scenarios": [
+    {"name":"unauthenticated_and_validation","requests":[
+      {"method":"GET","path":"/api/tasks","body":null,"expected":{"status":401,"body":{"error":"unauthorized"}}},
+      {"method":"POST","path":"/api/tasks","body":{"title":""},"headers":{"Authorization":"Bearer {$secret_file:FIXTURE_AUTH_TOKEN}"},"expected":{"status":400,"body":{"error":"invalid_input"}}}
+    ]},
+    {"name":"tenant_crud_xss_and_permission","requests":[
+      {"method":"POST","path":"/api/tasks","body":{"title":"<script>alert(1)</script>"},"headers":{"Authorization":"Bearer {$secret_file:FIXTURE_AUTH_TOKEN}"},"expected":{"status":201,"body":{"id":1,"title":"<script>alert(1)</script>"}}},
+      {"method":"GET","path":"/api/tasks","body":null,"headers":{"Authorization":"Bearer {$secret_file:FIXTURE_AUTH_TOKEN}"},"expected":{"status":200,"body":{"items":[{"id":1,"title":"<script>alert(1)</script>"}]}}},
+      {"method":"GET","path":"/api/tasks","body":null,"headers":{"Authorization":"Bearer {$secret_file:OTHER_TENANT_TOKEN}"},"expected":{"status":200,"body":{"items":[]}}},
+      {"method":"PUT","path":"/api/tasks/1","body":{"title":"forbidden"},"headers":{"Authorization":"Bearer {$secret_file:READ_ONLY_TOKEN}"},"expected":{"status":403,"body":{"error":"forbidden"}}}
+    ]}
+  ]
+}

@@ -113,6 +113,13 @@ def main() -> int:
         Simulator.mode = "native_tool"
         assistant = agent_transport.complete([{"role": "user", "content": "find"},
                                               {"role": "user", "content": "find", "unexpected": "dropped"}], tool_spec)
+        require(Simulator.observed["max_tokens"] == agent_transport.MAX_TOKENS, "default token budget changed")
+        try:
+            agent_transport.complete([{"role": "user", "content": "find"}], tool_spec, max_tokens=0)
+        except agent_transport.Refused as exc:
+            require(exc.reason_code == "protocol", "invalid token budget missing protocol reason code")
+        else:
+            raise AssertionError("out-of-range max_tokens accepted")
         tool_outcomes = {}
         for mode in ("duplicate_tool_id", "unknown_tool", "invalid_tool_args", "tool_truncated", "refusal", "missing_choices"):
             Simulator.mode = mode

@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "requirement": {
+    "schema": 1,
+    "goal": "Build a standard-library Python multi-tenant task tracker web app and API, listening on 0.0.0.0:8000. GET /health returns {ok:true}. Read bearer tokens only from private files /run/autoforge/secrets/FIXTURE_AUTH_TOKEN (tenant alpha, admin), OTHER_TENANT_TOKEN (tenant beta, admin), and READ_ONLY_TOKEN (tenant alpha, reader); never hardcode or expose tokens. API: GET /api/tasks returns {items:[{id,title}]} sorted by id for caller tenant; POST /api/tasks JSON {title} creates id 1 for the first task, returns {id,title} with 201; PUT /api/tasks/{id} updates title; DELETE /api/tasks/{id} returns {deleted:true}. IDs are stable integer primary keys. Missing/invalid auth is 401; reader mutation is 403; invalid title is 400; missing/cross-tenant id is 404. Persist SQLite data at /tmp/container-acceptance.sqlite, surviving process restart. Browser / shows labeled Task title form and task list; create/update/delete/refresh operate on same database and include CSRF protection. Escape user text (including <script>alert(1)</script>) rather than rendering markup. Provide clear empty, validation, permission and error feedback. Make no external resource/network requests.",
+    "references": []
+  },
+  "references": [],
+  "previous_validation": {"status": "none"}
+}

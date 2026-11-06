@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import stat
 import json
@@ -35,6 +36,55 @@ class BuildFailure(Exception):
 
 def _json_bytes(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
+def _failure_locations(stderr: bytes, root: Path) -> list[str]:
+    """Expose only candidate-owned traceback coordinates, never exception values or input data."""
+    locations = []
+    last_source_location = None
+    for raw_path, raw_line in re.findall(r'File "(/candidate/[^"\n]+)", line ([0-9]+)', stderr.decode('utf-8', 'replace')):
+        relative = raw_path.removeprefix('/candidate/')
+        if relative.startswith('/') or any(p in ('', '.', '..') for p in relative.split('/')):
+            continue
+        if (root / relative).is_file():
+            coordinate = f'{relative}:{raw_line}'
+            if coordinate not in locations:
+                locations.append(coordinate)
+            last_source_location = (relative, int(raw_line))
+        if len(locations) == 8:
+            break
+    allowed_errors = {'NameError', 'KeyError', 'TypeError', 'ValueError', 'AttributeError', 'ImportError', 'ModuleNotFoundError', 'SyntaxError', 'IndentationError', 'UnboundLocalError', 'sqlite3.OperationalError', 'sqlite3.IntegrityError'}
+    for line in stderr.decode('utf-8', 'replace').splitlines():
+        error_class = line.split(':', 1)[0]
+        if error_class in allowed_errors:
+            locations.append(error_class)
+            # Fixed labels only: exception text can contain private contract data.
+            message = line.partition(':')[2].lstrip()
+            diagnosis = None
+            if error_class == 'sqlite3.OperationalError':
+                if message.startswith(('no such column:', 'table ')) and ('no such column:' in message or ' has no column named ' in message):
+                    diagnosis = 'SQL schema mismatch: reconcile declared columns with every query and write'
+                elif message.startswith('near ') and message.endswith('syntax error'):
+                    diagnosis = 'SQL syntax failure: check statement syntax and execute one statement per execute call'
+                elif message == 'cannot start a transaction within a transaction':
+                    diagnosis = 'SQL transaction nesting: reconcile implicit and explicit transaction ownership'
+            elif error_class == 'TypeError' and message.startswith('unsupported operand type(s) for '):
+                diagnosis = 'Operand type mismatch: reconcile validated values and arithmetic operand types'
+            if diagnosis:
+                locations.append(diagnosis)
+            if error_class in ('NameError', 'UnboundLocalError') and last_source_location:
+                relative, line_number = last_source_location
+                try:
+                    tree = ast.parse((root / relative).read_bytes())
+                    names = sorted({node.id for node in ast.walk(tree)
+                                    if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+                                    and node.lineno == line_number and len(node.id) <= 64})[:8]
+                    if names:
+                        locations.append(f'Candidate source names at {relative}:{line_number}: ' + ', '.join(names))
+                except (OSError, SyntaxError, ValueError, RecursionError):
+                    pass
+            break
+    return locations
 
 def _stop_handler(_signum: int, _frame: Any) -> None:
     global STOP_REQUESTED
@@ -70,7 +120,7 @@ def _is_reparse(path: Path) -> bool:
     return bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
 
 
-def _manifest(raw: Any) -> tuple[Path, str]:
+def _manifest(raw: Any, *, require_entrypoint: bool = True) -> tuple[Path, str]:
     if not isinstance(raw, dict) or set(raw) != {"schema", "goal", "references", "files", "candidate_sha256", "workspace"}:
         raise BuildFailure("invalid workspace manifest shape")
     if type(raw["schema"]) is not int or raw["schema"] != 1:
@@ -139,7 +189,7 @@ def _manifest(raw: Any) -> tuple[Path, str]:
         actual = hashlib.sha256(json.dumps(canonical, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
     if actual != raw["candidate_sha256"]:
         raise BuildFailure("candidate manifest digest mismatch")
-    if "main.py" not in paths:
+    if require_entrypoint and "main.py" not in paths:
         raise BuildFailure("fixed entrypoint main.py is absent")
     return root, actual
 
@@ -200,11 +250,17 @@ def preflight(engine: str, image: str) -> dict[str, str]:
     return {"engine": engine, "server_os": "linux", "image_id": image}
 
 
-def _container(engine: str, image: str, root: Path, payload: bytes, timeout: int) -> tuple[bytes, bytes, int, bool]:
+def _container(engine: str, image: str, root: Path, payload: bytes, timeout: int, *, runtime: str = "python") -> tuple[bytes, bytes, int, bool]:
     if len(payload) > MAX_INPUT:
         raise BuildFailure("container request payload exceeds byte limit")
+    if runtime not in {"python", "node"}:
+        raise BuildFailure("container runtime must be python or node")
+    if runtime == "node":
+        entrypoint = ["node", "main.js"]
+    else:
+        entrypoint = ["python", "-I", "-c", f"import runpy,signal,sys;signal.alarm({timeout});sys.path.insert(0,'/candidate');runpy.run_path('/candidate/main.py',run_name='__main__')"]
     name = "autoforge-" + uuid.uuid4().hex
-    cmd = [engine, "run", "--rm", "--name", name, "--network=none", "--read-only", "--user=65534:65534", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=64", "--memory=256m", "--cpus=1", "--mount", f"type=bind,src={root},dst=/candidate,readonly", "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777", "--workdir", "/candidate", "--interactive", "--entrypoint", "python", image, "-I", "-c", f"import runpy,signal,sys;signal.alarm({timeout});sys.path.insert(0,'/candidate');runpy.run_path('/candidate/main.py',run_name='__main__')"]
+    cmd = [engine, "run", "--rm", "--name", name, "--network=none", "--read-only", "--user=65534:65534", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=64", "--memory=256m", "--cpus=1", "--mount", f"type=bind,src={root},dst=/candidate,readonly", "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777", "--workdir", "/candidate", "--interactive", "--entrypoint", *entrypoint[:1], image, *entrypoint[1:]]
     env = {"PATH": os.environ.get("PATH", "")}
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, close_fds=True, bufsize=0)
     out = bytearray(); err = bytearray(); overflow = [False]
@@ -286,7 +342,10 @@ def build(manifest: Any, contract_raw: Any, engine: str, image: str, preflight_i
         if timeout:
             build_pass = False; test_pass = False; observations.append(f"{scenario['name']}: container timed out or exceeded bounded output."); continue
         if code != 0:
-            build_pass = False; test_pass = False; observations.append(f"{scenario['name']}: container exited with status {code}."); continue
+            build_pass = False; test_pass = False
+            locations = _failure_locations(err, root)
+            observations.append(f"{scenario['name']}: container exited with status {code}." + (f" Candidate traceback locations: {', '.join(locations)}." if locations else ''))
+            continue
         if len(out) > MAX_OUT:
             build_pass = False; test_pass = False; observations.append(f"{scenario['name']}: stdout exceeded limit."); continue
         try:

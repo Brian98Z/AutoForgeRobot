@@ -1,0 +1,6 @@
+{
+  "inventory-order-001": {"cases":[{"input":{"items":[{"id":"a","quantity":1},{"id":"b","quantity":3},{"id":"c","quantity":3}]},"expected":[{"id":"b","quantity":3},{"id":"c","quantity":3},{"id":"a","quantity":1}]}]},
+  "order-validation-001": {"cases":[{"input":{"quantity":0},"expected":{"accepted":false}},{"input":{"quantity":2},"expected":{"accepted":true}}]},
+  "ticket-status-001": {"cases":[{"input":{"from":"open","to":"resolved"},"expected":{"accepted":true}},{"input":{"from":"resolved","to":"open"},"expected":{"accepted":false}}]},
+  "content-render-001": {"cases":[{"input":{"title":"T","body":"B"},"expected":"T\nB"},{"input":{"title":"T"},"expected":{"error":"body required"}}]}
+}

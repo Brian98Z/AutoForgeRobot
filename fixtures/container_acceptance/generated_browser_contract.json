@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "start_path": "/",
+  "steps": [
+    {"action":"assert_role","role":"heading","name":"Tasks"},
+    {"action":"assert_empty","selector":"[data-testid='task-list']"},
+    {"action":"assert_role","role":"textbox","name":"Task title"},
+    {"action":"fill","selector":"[name='title']","value":"Browser persisted task"},
+    {"action":"click","selector":"[data-testid='create-task']"},
+    {"action":"assert_text","selector":"[data-testid='task-list']","text":"Browser persisted task"},
+    {"action":"assert_count","selector":"[data-testid='task-list'] script","count":0},
+    {"action":"reload"},
+    {"action":"assert_text","selector":"[data-testid='task-list']","text":"Browser persisted task"},
+    {"action":"screenshot","name":"generated-task-list"}
+  ]
+}

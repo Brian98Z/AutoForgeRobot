@@ -46,6 +46,32 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="autoforge-business-") as td:
         base = Path(td)
         candidate = {"schema": 1, "goal": "中文库存应用验收", "references": [], "files": [{"path": "main.py", "content": (FIXTURE / "main.py").read_text(encoding="utf-8")}]} 
+        traceback_probe = (b'Traceback (most recent call last):\n  File "/candidate/main.py", line 12, in main\n'
+                           b'  File "/candidate/../oracle.py", line 5, in hidden\n'
+                           b'ValueError: secret-request-value\n')
+        probe_root = base / 'traceback-probe'; probe_root.mkdir()
+        (probe_root / 'main.py').write_text('pass\n', encoding='utf-8')
+        require(builder._failure_locations(traceback_probe, probe_root) == ['main.py:12', 'ValueError'], 'traceback leaked values or noncandidate paths')
+        for error in (b'sqlite3.OperationalError: no such column: SECRET_COLUMN',
+                      b'sqlite3.OperationalError: near "SECRET_SQL": syntax error',
+                      b'TypeError: unsupported operand type(s) for +: SECRET_TYPES'):
+            details = builder._failure_locations(error, probe_root)
+            require(len(details) == 2 and 'SECRET' not in json.dumps(details), 'fixed diagnosis missing or private exception value exposed')
+        require(builder._failure_locations(b'sqlite3.OperationalError: SECRET_UNKNOWN', probe_root) == ['sqlite3.OperationalError'], 'unknown exception text leaked')
+        (probe_root / 'main.py').write_text('value = Optional[int]\n', encoding='utf-8')
+        name_error = (b'Traceback (most recent call last):\n  File "/candidate/main.py", line 1, in <module>\n'
+                      b'NameError: name SECRET_REQUEST_VALUE is not defined\n')
+        source_details = builder._failure_locations(name_error, probe_root)
+        require('Candidate source names at main.py:1: Optional, int' in source_details
+                and 'SECRET_REQUEST_VALUE' not in json.dumps(source_details), 'name diagnosis did not stay source-bound')
+        (probe_root / 'main.py').write_text('value = "SECRET_SOURCE_LITERAL"\n', encoding='utf-8')
+        require(builder._failure_locations(name_error, probe_root) == ['main.py:1', 'NameError'],
+                'candidate string literal exposed as diagnostic name')
+        require(builder._failure_locations(name_error.replace(b'main.py', b'../oracle.py'), probe_root) == ['NameError'],
+                'outside-candidate name diagnostic exposed')
+        (probe_root / 'main.py').write_text('broken(\n', encoding='utf-8')
+        require(builder._failure_locations(name_error, probe_root) == ['main.py:1', 'NameError'],
+                'unparseable candidate prevented bounded failure feedback')
         staged = stage_candidate(candidate, base / "source")
         manifest = json.loads(Path(staged["manifest"]).read_text(encoding="utf-8"))
         envelope = {"schema": 1, "workspace_manifest": manifest, "candidate_sha256": staged["candidate_sha256"]}

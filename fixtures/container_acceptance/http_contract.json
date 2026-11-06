@@ -1,0 +1,328 @@
+{
+  "schema": 1,
+  "health_path": "/health",
+  "scenarios": [
+    {
+      "name": "auth_tenant_crud_pagination_idempotency_revoke",
+      "restart_after": 18,
+      "requests": [
+        {"method":"GET","path":"/ui/items","body":null,"expected":{"status":401,"body":{"error":"unauthorized"}}},
+        {"method":"POST","path":"/ui/items","body":{"id":"csrf-attack","value":"no"},"expected":{"status":401,"body":{"error":"unauthorized"}}},
+        {"method":"POST","path":"/ui/login","body":{"token":"fixture-token-readonly"},"expected":{"status":200,"body":{"ok":true}}},
+        {"method":"POST","path":"/ui/items","body":{"id":"reader-denied","value":"no"},"expected":{"status":403,"body":{"error":"forbidden"}}},
+        {"method":"POST","path":"/ui/login","body":{"token":"fixture-token-alpha"},"expected":{"status":200,"body":{"ok":true}}},
+        {"method":"POST","path":"/ui/items","body":{"id":"csrf-bad","value":"cross origin"},"headers":{"X-CSRF-Token":"wrong"},"expected":{"status":403,"body":{"error":"csrf"}}},
+        {"method":"POST","path":"/ui/items","body":{"id":"reader-deny","value":"no"},"headers":{"X-CSRF-Token":"wrong"},"expected":{"status":403,"body":{"error":"csrf"}}},
+        {"method":"PUT","path":"/items/one","body":{"value":"denied"},"headers":{"Authorization":"Bearer fixture-token-readonly"},"expected":{"status":403,"body":{"error":"forbidden"}}},
+        {
+          "method": "GET",
+          "path": "/items?offset=-1&limit=1",
+          "body": null,
+          "headers": {"Authorization":"Bearer fixture-token-alpha"},
+          "expected": {"status":400,"body":{"error":"invalid_pagination"}}
+        },
+        {
+          "method": "POST",
+          "path": "/items",
+          "body": {
+            "op": "create",
+            "id": "one",
+            "value": "first"
+          },
+          "headers": {
+            "Authorization": "Bearer fixture-token-alpha",
+            "Idempotency-Key": "k1"
+          },
+          "expected": {
+            "status": 201,
+            "body": {
+              "id": "one",
+              "value": "first"
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/items",
+          "body": {
+            "op": "create",
+            "id": "different",
+            "value": "ignored"
+          },
+          "headers": {
+            "Authorization": "Bearer fixture-token-alpha",
+            "Idempotency-Key": "k1"
+          },
+          "expected": {
+            "status": 200,
+            "body": {
+              "id": "one",
+              "value": "first"
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/items/one",
+          "body": null,
+          "headers": {
+            "Authorization": "Bearer fixture-token-beta"
+          },
+          "expected": {
+            "status": 404,
+            "body": {
+              "error": "not_found"
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/items?offset=0&limit=1",
+          "body": null,
+          "headers": {
+            "Authorization": "Bearer fixture-token-alpha"
+          },
+          "expected": {
+            "status": 200,
+            "body": {
+              "items": [
+                {
+                  "id": "one",
+                  "value": "first"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/items",
+          "body": {
+            "op": "create",
+            "id": "two",
+            "value": "second"
+          },
+          "headers": {
+            "Authorization": "Bearer fixture-token-alpha"
+          },
+          "expected": {
+            "status": 201,
+            "body": {
+              "id": "two",
+              "value": "second"
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/items?offset=1&limit=1",
+          "body": null,
+          "headers": {
+            "Authorization": "Bearer fixture-token-alpha"
+          },
+          "expected": {
+            "status": 200,
+            "body": {
+              "items": [
+                {
+                  "id": "two",
+                  "value": "second"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/items/one",
+          "body": {
+            "value": "intrusion"
+          },
+          "headers": {
+            "Authorization": "Bearer fixture-token-beta"
+          },
+          "expected": {
+            "status": 404,
+            "body": {
+              "error": "not_found"
+            }
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/items/one",
+          "body": null,
+          "headers": {
+            "Authorization": "Bearer fixture-token-beta"
+          },
+          "expected": {
+            "status": 404,
+            "body": {
+              "error": "not_found"
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/items/one",
+          "body": {
+            "value": ""
+          },
+          "headers": {
+            "Authorization": "Bearer fixture-token-alpha"
+          },
+          "expected": {
+            "status": 400,
+            "body": {
+              "error": "invalid_item"
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/items/one",
+          "body": {
+            "value": "updated"
+          },
+          "headers": {
+            "Authorization": "Bearer fixture-token-alpha"
+          },
+          "expected": {
+            "status": 200,
+            "body": {
+              "id": "one",
+              "value": "updated"
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/items/one",
+          "body": null,
+          "headers": {
+            "Authorization": "Bearer fixture-token-alpha"
+          },
+          "expected": {
+            "status": 200,
+            "body": {
+              "id": "one",
+              "value": "updated"
+            }
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/items/two",
+          "body": null,
+          "headers": {
+            "Authorization": "Bearer fixture-token-alpha"
+          },
+          "expected": {
+            "status": 200,
+            "body": {
+              "deleted": "two"
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/items/two",
+          "body": null,
+          "headers": {
+            "Authorization": "Bearer fixture-token-alpha"
+          },
+          "expected": {
+            "status": 404,
+            "body": {
+              "error": "not_found"
+            }
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/items/two",
+          "body": null,
+          "headers": {
+            "Authorization": "Bearer fixture-token-alpha"
+          },
+          "expected": {
+            "status": 404,
+            "body": {
+              "error": "not_found"
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/items?offset=abc&limit=1",
+          "body": null,
+          "headers": {
+            "Authorization": "Bearer fixture-token-alpha"
+          },
+          "expected": {
+            "status": 400,
+            "body": {
+              "error": "invalid_pagination"
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/items/one",
+          "body": null,
+          "headers": {
+            "Authorization": "Bearer fixture-token-alpha"
+          },
+          "expected": {
+            "status": 200,
+            "body": {
+              "id": "one",
+              "value": "updated"
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/items/one",
+          "body": null,
+          "expected": {
+            "status": 401,
+            "body": {
+              "error": "unauthorized"
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/items",
+          "body": {
+            "op": "revoke"
+          },
+          "headers": {
+            "Authorization": "Bearer fixture-token-alpha"
+          },
+          "expected": {
+            "status": 200,
+            "body": {
+              "ok": true
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/items/one",
+          "body": null,
+          "headers": {
+            "Authorization": "Bearer fixture-token-alpha"
+          },
+          "expected": {
+            "status": 401,
+            "body": {
+              "error": "revoked"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

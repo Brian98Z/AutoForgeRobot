@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "version": 2,
+  "previous_request_sha256": "5e3986784d8ee9d335db814fad97e14dbfcac0260a83b2e50254b2bb32e39536",
+  "request_sha256": "fccd24268beee26bbf042a93a4ff4f6110aa16f95d85c4c641e641b9252a1525",
+  "change": "Declare input operation field op explicitly; expected answers unchanged",
+  "source": "operator implementation clarification derived from existing public source API; no candidate faults located",
+  "contract_sha256": "1fb7420ce64d9009a54a473e69bd6740807ec20fc5e12c2a46168d038adadfa3",
+  "limitations": [
+    "Original ambiguous goal is not retroactively declared passed.",
+    "This is an explicit public specification revision, not an unchanged-request comparison."
+  ]
+}

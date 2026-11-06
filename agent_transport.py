@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+import os
+from typing import Any, Callable
 
 import application_proposer
 
@@ -68,28 +69,149 @@ def _tools(value: Any) -> list[dict[str, Any]]:
     return result
 
 
-def complete(messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
-    """Request one complete model turn, returning its assistant message without dispatching tools."""
+def _usage(value: Any) -> dict[str, int]:
+    usage = _object(value, "usage")
+    required = {"prompt_tokens", "completion_tokens", "total_tokens"}
+    if not required <= set(usage):
+        raise Refused("API usage counters are malformed")
+    if any(type(usage[key]) is not int or usage[key] < 0 for key in required):
+        raise Refused("API usage counters are malformed")
+    if usage["total_tokens"] != usage["prompt_tokens"] + usage["completion_tokens"]:
+        raise Refused("API usage counters are inconsistent")
+    return {key: usage[key] for key in ("prompt_tokens", "completion_tokens", "total_tokens")}
+
+
+def _stream(body: dict[str, Any], on_event: Callable[[dict[str, Any]], None],
+            should_stop: Callable[[], bool] | None) -> dict[str, Any]:
+    content: list[str] = []
+    calls: dict[int, dict[str, Any]] = {}
+    finish = None
+    role_seen = False
+    usage = None
+    for chunk in application_proposer.interruptible_stream_completion(
+            body, should_stop, application_proposer.MAX_RESPONSE_BYTES):
+        if chunk.get("error") is not None:
+            raise Refused("API stream returned an error")
+        if "usage" in chunk:
+            if usage is not None:
+                raise Refused("API stream contains duplicate usage")
+            usage = _usage(chunk["usage"])
+        choices = chunk.get("choices")
+        if not isinstance(choices, list) or len(choices) > 1:
+            raise Refused("API stream must contain one choice")
+        if not choices:
+            if finish is None or set(chunk) - {"choices", "usage", "id", "object", "created", "model", "system_fingerprint", "timings"}:
+                raise Refused("API stream has an unexpected empty choice")
+            continue
+        choice = _object(choices[0], "stream choice")
+        if type(choice.get("index")) is not int or choice["index"] != 0 or finish is not None:
+            raise Refused("API stream has an invalid choice index or data after finish")
+        delta = _object(choice.get("delta"), "stream delta")
+        if set(delta) - {"role", "content", "tool_calls", "refusal", "reasoning_content"}:
+            raise Refused("API stream uses unsupported delta fields")
+        if delta.get("refusal"):
+            raise application_proposer.TransportError("API refused the request", "refusal")
+        if "role" in delta:
+            if delta["role"] != "assistant":
+                raise Refused("API stream role is not assistant")
+            role_seen = True
+        text = delta.get("content")
+        if text is not None:
+            if not isinstance(text, str):
+                raise Refused("API stream content must be text")
+            content.append(text)
+            if text:
+                on_event({"type": "model_text_delta", "text": text})
+        fragments = delta.get("tool_calls", [])
+        if not isinstance(fragments, list):
+            raise Refused("API stream tool_calls must be an array")
+        for fragment in fragments:
+            fragment = _object(fragment, "stream tool call")
+            index = fragment.get("index")
+            if type(index) is not int or not 0 <= index < 96 or set(fragment) - {"index", "id", "type", "function"}:
+                raise Refused("API stream tool call has invalid fields/index")
+            call = calls.setdefault(index, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+            if "type" in fragment and fragment["type"] != "function":
+                raise Refused("API stream tool call must be a function")
+            fn = _object(fragment.get("function", {}), "stream tool function")
+            if set(fn) - {"name", "arguments"}:
+                raise Refused("API stream tool function has invalid fields")
+            for key, target, source in (("id", call, fragment), ("name", call["function"], fn), ("arguments", call["function"], fn)):
+                if key in source:
+                    if not isinstance(source[key], str):
+                        raise Refused("API stream tool fragments must be strings")
+                    target[key] += source[key]
+            on_event({"type": "model_tool_delta", "index": index,
+                      "id_delta": fragment.get("id", ""), "name_delta": fn.get("name", ""),
+                      "arguments_delta": fn.get("arguments", "")})
+        reason = choice.get("finish_reason")
+        if reason is not None:
+            if reason == "length":
+                raise application_proposer.TransportError("API response was truncated", "truncation")
+            if reason == "content_filter":
+                raise application_proposer.TransportError("API refused the request", "refusal")
+            if reason != "stop" and reason != "tool_calls":
+                raise Refused("API stream has unsupported finish reason")
+            finish = reason
+    if not role_seen or finish is None or sorted(calls) != list(range(len(calls))):
+        raise application_proposer.TransportError("API stream ended without a complete assistant turn", "truncation")
+    if usage is not None:
+        if on_event is not None:
+            on_event({"type": "model_usage", "usage": usage, "source": "server"})
+    elif on_event is not None:
+        on_event({"type": "model_usage_unavailable", "source": "unavailable"})
+    message = {"role": "assistant", "content": "".join(content) if content else None}
+    if calls:
+        message["tool_calls"] = [calls[index] for index in sorted(calls)]
+    return {"choices": [{"finish_reason": finish, "message": message}]}
+
+
+def complete(messages: list[dict[str, Any]], tools: list[dict[str, Any]], *,
+             on_event: Callable[[dict[str, Any]], None] | None = None,
+             should_stop: Callable[[], bool] | None = None,
+             max_tokens: int = MAX_TOKENS) -> dict[str, Any]:
+    """Return one validated assistant turn; streaming deltas are observation only."""
     clean_messages = _messages(messages)
     clean_tools = _tools(tools)
     _base, _url, model, _key = application_proposer._endpoint()
-    envelope = application_proposer.completion({
-        "model": model,
-        "messages": clean_messages,
-        "tools": clean_tools,
-        "tool_choice": "auto",
-        "max_tokens": MAX_TOKENS,
-    })
+    tool_choice = os.environ.get('AUTOFORGE_TOOL_CHOICE', 'auto')
+    if tool_choice not in ('auto', 'required'):
+        raise Refused('AUTOFORGE_TOOL_CHOICE must be auto or required')
+    if type(max_tokens) is not int or not 1 <= max_tokens <= MAX_TOKENS:
+        raise Refused(f"max_tokens must be an integer from 1 to {MAX_TOKENS}")
+    if should_stop is not None and should_stop():
+        raise application_proposer.TransportError("API request cancelled", "cancellation")
+    thinking = os.environ.get('AUTOFORGE_ENABLE_THINKING', '')
+    if thinking not in ('', 'true', 'false'):
+        raise Refused('AUTOFORGE_ENABLE_THINKING must be unset, true, or false')
+    body = {"model": model, "messages": clean_messages, "tools": clean_tools,
+            "tool_choice": tool_choice, "parallel_tool_calls": False, "max_tokens": max_tokens,
+            "stream_options": {"include_usage": True}}
+    if thinking:
+        body['chat_template_kwargs'] = {'enable_thinking': thinking == 'true'}
+    if on_event is not None or should_stop is not None:
+        envelope = _stream(body, on_event or (lambda _event: None), should_stop)
+    else:
+        envelope = application_proposer.completion(body)
+    if not isinstance(envelope, dict):
+        raise Refused("API response must be an object")
     choices = envelope.get("choices")
+    usage = _usage(envelope["usage"]) if "usage" in envelope else None
+    if usage is not None and on_event is not None and not envelope.get("stream_usage_emitted"):
+        on_event({"type": "model_usage", "usage": usage, "source": "server"})
     if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
         raise Refused("API response must contain exactly one choice")
     choice = choices[0]
     reason = choice.get("finish_reason")
     message = choice.get("message")
+    if reason == "length":
+        raise application_proposer.TransportError("API response was truncated", "truncation")
+    if reason == "content_filter":
+        raise application_proposer.TransportError("API refused the request", "refusal")
     if reason not in ("stop", "tool_calls") or not isinstance(message, dict):
-        raise Refused("API response has missing, truncated, or invalid finish reason/message")
+        raise Refused("API response has missing or invalid finish reason/message")
     if message.get("refusal"):
-        raise Refused("API refused the request")
+        raise application_proposer.TransportError("API refused the request", "refusal")
     # Some compatible providers attach private reasoning metadata; never return it to the agent loop.
     if set(message) - {"role", "content", "tool_calls", "refusal", "function_call", "audio", "annotations", "reasoning_content"}:
         raise Refused("API response has an invalid assistant message shape")

@@ -1,0 +1,23 @@
+{
+  "passed": [
+    "Python + Julia independently synthesize addition and promote",
+    "New goal rejects old candidate then repairs in round 2",
+    "Signed history, artifacts, source build and acceptance replay",
+    "Persisted rollback restores previous behavior",
+    "Latched operator kill and explicit resume",
+    "Contradictory goal rejected without state change",
+    "Real dual-runtime synthesis: minimum",
+    "Real dual-runtime synthesis: maximum",
+    "Real dual-runtime synthesis: negative-affine",
+    "Real dual-runtime synthesis: clamp",
+    "Same task ID retains old regression anchors and vetoes incompatible change",
+    "Holdout veto prevents public-only success from promotion",
+    "Kill remains available while controller lock is held",
+    "Tampered artifact rejected before execution",
+    "Forged evidence rejected by Ed25519 verification"
+  ],
+  "count": 15,
+  "elapsed_seconds": 44.19,
+  "model_api": "not exercised",
+  "production_release": "not implemented; offline v0 only"
+}

@@ -193,7 +193,7 @@ def _terminate_process(proc: subprocess.Popen[Any]) -> None:
         proc.kill()
 
 
-def _run_json_command(argv: list[str], payload: dict[str, Any], timeout: int = COMMAND_TIMEOUT) -> Any:
+def _run_json_command(argv: list[str], payload: dict[str, Any], timeout: int = COMMAND_TIMEOUT, *, should_stop=None) -> Any:
     data = _json_bytes(payload)
     started = time.monotonic()
     try:
@@ -203,8 +203,8 @@ def _run_json_command(argv: list[str], payload: dict[str, Any], timeout: int = C
             proc = subprocess.Popen(argv, stdin=stdin, stdout=stdout, stderr=stderr, shell=False, start_new_session=os.name != "nt")
             try:
                 while True:
-                    if STOP_REQUESTED:
-                        raise Refused("operator STOP received during adapter execution")
+                    if STOP_REQUESTED or (should_stop is not None and should_stop()):
+                        raise Refused("operator STOP or adapter cancellation received during adapter execution")
                     if os.fstat(stdout.fileno()).st_size > MAX_STDOUT_BYTES or os.fstat(stderr.fileno()).st_size > MAX_STDERR_BYTES:
                         raise Refused("adapter output exceeded bounded stdout/stderr limit")
                     remaining = timeout - (time.monotonic() - started)
@@ -222,8 +222,8 @@ def _run_json_command(argv: list[str], payload: dict[str, Any], timeout: int = C
                     raise Refused("adapter output exceeded bounded stdout/stderr limit")
                 if proc.returncode != 0:
                     raise Refused(f"adapter exited {proc.returncode}: {err.decode('utf-8', 'replace')[:2000]}")
-                if STOP_REQUESTED:
-                    raise Refused("operator STOP received before adapter acceptance")
+                if STOP_REQUESTED or (should_stop is not None and should_stop()):
+                    raise Refused("operator STOP or adapter cancellation received before adapter acceptance")
                 try:
                     return json.loads(out.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:

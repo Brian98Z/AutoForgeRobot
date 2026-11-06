@@ -42,6 +42,12 @@ def main():
             refused=invoke('run');assert refused.returncode==2
             blocked=invoke('run',['--allow-model','--trusted-adapter']);assert blocked.returncode==3,(blocked.stdout,blocked.stderr)
             assert ModelTrap.calls==0 and not out.exists()
+            for extra in (
+                ['--validation-kind','heldout','--oracle-ledger',str(root/'ledger.json'),'--max-oracle-queries','0'],
+                ['--validation-kind','heldout','--oracle-ledger',str(root/'ledger.json'),'--max-oracle-queries','1','--mode','proposal'],
+                ['--oracle-ledger',str(root/'ledger.json'),'--max-oracle-queries','1']):
+                invalid_policy=invoke('run',['--allow-model','--trusted-adapter',*extra])
+                assert invalid_policy.returncode==2 and ModelTrap.calls==0 and not out.exists()
             # Exact oracle copies cannot be introduced through the public reference catalog.
             package=references.ingest(ROOT/'fixtures/business/contract.json',root/'store','test corpus','owned')
             req=json.loads((ROOT/'fixtures/business/request.json').read_text(encoding='utf-8'));req['references']=[package['package_id']]

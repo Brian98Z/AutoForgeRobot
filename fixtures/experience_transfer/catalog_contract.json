@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "entrypoint": "main.py",
+  "scenarios": [
+    {
+      "name": "catalog-add-list-order",
+      "requests": [
+        {"op": "add", "title": "Zephyr", "author": "A"},
+        {"op": "add", "title": "Atlas", "author": "B"},
+        {"op": "add", "title": "Morrow", "author": "C"},
+        {"op": "list"}
+      ],
+      "expected": [
+        {"ok": true, "title": "Zephyr", "author": "A"},
+        {"ok": true, "title": "Atlas", "author": "B"},
+        {"ok": true, "title": "Morrow", "author": "C"},
+        {"ok": true, "books": [{"title": "Atlas", "author": "B"}, {"title": "Morrow", "author": "C"}, {"title": "Zephyr", "author": "A"}]}
+      ]
+    },
+    {
+      "name": "catalog-update-validation-no-mutation",
+      "requests": [
+        {"op": "add", "title": "Zephyr", "author": "A"},
+        {"op": "add", "title": "Atlas", "author": "B"},
+        {"op": "add", "title": "Morrow", "author": "C"},
+        {"op": "add", "title": "Atlas", "author": "Updated"},
+        {"op": "add", "title": "", "author": "Invalid"},
+        {"op": "add", "title": "Boolean", "author": true},
+        {"op": "unknown", "title": "Nope", "author": "N"},
+        {"op": "list"}
+      ],
+      "expected": [
+        {"ok": true, "title": "Zephyr", "author": "A"},
+        {"ok": true, "title": "Atlas", "author": "B"},
+        {"ok": true, "title": "Morrow", "author": "C"},
+        {"ok": true, "title": "Atlas", "author": "Updated"},
+        {"ok": false, "error": "invalid_item"},
+        {"ok": false, "error": "invalid_item"},
+        {"ok": false, "error": "invalid_item"},
+        {"ok": true, "books": [{"title": "Atlas", "author": "Updated"}, {"title": "Morrow", "author": "C"}, {"title": "Zephyr", "author": "A"}]}
+      ]
+    }
+  ]
+}

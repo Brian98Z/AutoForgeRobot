@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "target": "AutoForge Address Book",
+  "source": {
+    "path": "main.cs",
+    "language": "csharp-winforms",
+    "framework_compiler": "C:/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe"
+  },
+  "public_requirements": [
+    "Show a named WinForms window titled AutoForge Address Book.",
+    "Start with an empty address book and visibly show No contacts yet.",
+    "Provide an editable name field AutomationId name_input and Add button AutomationId add_item.",
+    "Adding a non-empty name displays it in the address book and removes the empty-state message.",
+    "Adding an empty name is rejected visibly with Name is required and adds no contact."
+  ],
+  "scenarios": [
+    {
+      "name": "initial-empty-state",
+      "actions": [],
+      "assertions": [
+        {"kind": "text", "value": "No contacts yet", "operator": "contains"},
+        {"kind": "element", "target": "add_item", "operator": "exists", "value": true}
+      ]
+    },
+    {
+      "name": "add-contact",
+      "actions": [
+        {"type": "type", "target": "name_input", "value": "Alice"},
+        {"type": "click", "target": "add_item"},
+        {"type": "wait", "value": 300}
+      ],
+      "assertions": [
+        {"kind": "text", "value": "Alice", "operator": "contains"},
+        {"kind": "text", "value": "No contacts yet", "operator": "not_contains"}
+      ]
+    },
+    {
+      "name": "reject-empty-input",
+      "actions": [
+        {"type": "type", "target": "name_input", "value": ""},
+        {"type": "click", "target": "add_item"},
+        {"type": "wait", "value": 300}
+      ],
+      "assertions": [
+        {"kind": "text", "value": "Name is required", "operator": "contains"},
+        {"kind": "text", "value": "Alice", "operator": "contains"}
+      ]
+    }
+  ]
+}
