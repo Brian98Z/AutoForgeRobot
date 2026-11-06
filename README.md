@@ -15,9 +15,9 @@ An AI-driven code iteration toolkit that turns goals and reference code into edi
 Requires Python 3.11+ and, for application execution, a Linux Docker/Podman engine with a trusted local Python image.
 
 ```bash
-python application_proposer.py --check-config
-python application_build.py --help
-python application_capabilities.py matrix
+python autoforge/application_proposer.py --check-config
+python autoforge/application_build.py --help
+python autoforge/application_capabilities.py matrix
 ```
 
 Configure an OpenAI-compatible model with `AUTOFORGE_API_BASE`, `AUTOFORGE_MODEL`, and `AUTOFORGE_API_KEY` when required.
@@ -30,9 +30,9 @@ Windows x64 single-file controller: [latest release](https://github.com/Brian98Z
 
 | Path | Purpose |
 | --- | --- |
-| `application_*.py` | Controller: specification, planning, building, quality, delivery, release gates |
-| `agent_*.py` | Native tool loop, sessions, streaming, recovery, budget and stop controls |
-| `*_check.py` | Verification scripts; `application_capabilities.py verify` runs the curated suite |
+| `autoforge/` | Controller modules: specification, planning, building, quality, delivery, release gates, the native agent tool loop, sessions, budgets and the MCP client |
+| `checks/` | Verification scripts; `autoforge/application_capabilities.py verify` runs the curated suite |
+| `universal/` | Two-stack interpreter, Lean model, benchmark and resilience evidence |
 | `src/` | Rust sandbox (WASM execution, signed envelopes, durable state) |
 | `fixtures/`, `providers/`, `examples/`, `tests/` | Contracts, adapters, examples and test fixtures |
 | `docs/STATUS.md` | Full status, release evidence and limitation ledger |
@@ -42,7 +42,7 @@ Windows x64 single-file controller: [latest release](https://github.com/Brian98Z
 Build a Windows onefile executable with Python 3.11 and PyInstaller 6.22.3:
 
 ```bash
-python build_exe.py
+python autoforge/build_exe.py
 ```
 
 The build writes `dist/autoforge.exe` and a dispatcher entry (`autoforge_cli.py`) accepts any bundled module CLI:
@@ -64,7 +64,7 @@ MCP tools are not injected into the model tool loop.
 ## Verification
 
 ```bash
-python application_capabilities.py verify --timeout 120 --output verification.json
+python autoforge/application_capabilities.py verify --timeout 120 --output verification.json
 ```
 
 Each check reports `PASS`, `BLOCKED`, or `FAIL`. `BLOCKED` marks a declared boundary (unconfigured engine, database, browser, or opt-in model), not a silent pass. Detailed status and evidence binding live in `docs/STATUS.md`.

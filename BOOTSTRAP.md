@@ -16,7 +16,7 @@ Reference: the official WebAssembly execution semantics at https://webassembly.g
 
 ### A. Continuous Target Evolution
 
-`python bootstrap.py` generates state, tasks, command logs, and reports in an independent `bootstrap-runs/` directory; it does not modify the existing `state/`.
+`python autoforge/bootstrap.py` generates state, tasks, command logs, and reports in an independent `bootstrap-runs/` directory; it does not modify the existing `state/`.
 
 Each round must satisfy:
 
@@ -44,7 +44,7 @@ These programs are computational witnesses written by the verifier. They do not 
 
 ### C. Extension Experiment Without Recompiling the Controller
 
-`python extension_test.py` uses the existing `AUTOFORGE_PROJECT` protocol to switch to a proposer in a separate test directory:
+`python autoforge/extension_test.py` uses the existing `AUTOFORGE_PROJECT` protocol to switch to a proposer in a separate test directory:
 
 - Independent Python and Julia implementations search for bitwise-operation candidates; after extension, XOR—which the original proposer cannot express—can be promoted and executed correctly.
 - The controller binary SHA-256 must remain the same; the new proposer hash must be included in signed provenance.
