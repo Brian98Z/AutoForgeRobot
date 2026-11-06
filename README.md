@@ -55,6 +55,12 @@ The build writes `dist/autoforge.exe` and a dispatcher entry (`autoforge_cli.py`
 
 Frozen subprocess calls using `sys.executable script.py` or `sys.executable -c` are routed back through the dispatcher. The curated 48-script suite is not claimed to have native parity inside the frozen binary.
 
+## MCP integration
+
+AutoForge includes a bounded stdio MCP client (`agent_mcp.py`) for controller-side tool discovery and calls.
+See [docs/MCP.md](docs/MCP.md) for configuration, CLI usage, safety bounds and the two supported agent patterns.
+MCP tools are not injected into the model tool loop.
+
 ## Verification
 
 ```bash
