@@ -1,45 +1,45 @@
-# 通用性验证结论
+# Universality Verification Verdict
 
-日期：2026-10-30。
+Date: 2026-10-30.
 
-## 判定
+## Verdict
 
-**新增双栈抽象计算模型：图灵完备性的构造性论证通过本次审阅。**
+**Constructive argument for the Turing-completeness of the newly added double-stack abstract computation model: passed this review.**
 
-成立条件：任意有限机器描述和输入均可编码，存储允许任意有限增长，没有全局步数上限。`PROOF.md` 给出固定解释器、配置映射、L/R/S逐步双向模拟、归纳及停机/发散对应；不是从测试次数推断通用性。
+Conditions: any finite machine description and input can be encoded, storage may grow by any finite amount, and there is no global step limit. `PROOF.md` provides a fixed interpreter, configuration mapping, step-by-step bidirectional L/R/S simulation, induction, and correspondence of halting/divergence; universality is not inferred from the number of tests.
 
-**可运行有界实现：有限一致性验证通过。** 新增Lean形式模型的9个核心模拟定理通过内核检查；不作Python完整代码refinement或整个通用性U已获认证的声明。旧有限测试报告里的 `NOT_KERNEL_CERTIFIED` 仍表示那些测试没有认证构造证明；新内核证据独立保存在 `results/kernel-887c58d426db/report.json`。
+**Executable bounded implementation: finite consistency validation passed.** The 9 core simulation theorems in the newly added Lean formal model passed kernel checking; this is not a claim of full Python code refinement or certification of all of universality U. `NOT_KERNEL_CERTIFIED` in older finite-test reports still means those tests did not certify the constructive proof; new kernel evidence is stored separately at `results/kernel-887c58d426db/report.json`.
 
-**原AutoForge：未因此成为可自主生成任意系统的通用开发代理。** 原i64 WASM发布系统、权限边界、演示状态均未改变；通用解释器作为独立验证组件交付。
+**The original AutoForge has not thereby become a general development agent capable of autonomously generating arbitrary systems.** The original i64 WASM release system, permission boundaries, and demo state remain unchanged; the universal interpreter is delivered as a separate verification component.
 
-## 实测证据
+## Measured Evidence
 
-|项目|结果|
+|Item|Result|
 |---|---:|
-|多种子批次|12/12 PASS|
-|随机机器/输入案例|7,200|
-|逐步完整观察比较|134,751|
-|每批次行为维度|18/18 PASS|
-|局部L/R/S组合族|81种，全通过|
-|额外首轮冒烟|600案例、11,763次比较，通过|
+|Multi-seed batches|12/12 PASS|
+|Random machine/input cases|7,200|
+|Step-by-step full observation comparisons|134,751|
+|Behavior dimensions per batch|18/18 PASS|
+|Local L/R/S combination family|81, all passed|
+|Additional first-round smoke run|600 cases, 11,763 comparisons, passed|
 
-81种局部组合在各批次重复，不算972种；随机生成实例不保证两两不同。上述计数是有限证据，不能提升为所有机器所有输入均测试过。
+The 81 local combinations are repeated across batches and do not count as 972; randomly generated instances are not guaranteed to be pairwise distinct. These counts are finite evidence and cannot be elevated to a claim that all machines and inputs have been tested.
 
-种子20261030至20261041，每台随机机器最多运行100步。独立oracle用绝对地址稀疏字典，被测实现用双栈；比较状态、头、累计步数及全部非blank带格，不只比较最终整数。
+Seeds 20261030 through 20261041; each random machine runs for at most 100 steps. The independent oracle uses an absolute-address sparse dictionary, while the system under test uses double stacks; comparisons cover state, head, cumulative steps, and all nonblank tape cells, not just the final integer.
 
-汇总：`results/batch-summary.json`。每批完整报告目录由该汇总索引，报告包含被测源文件SHA256与真实CLI输出。初次报告：`results/verify-8ab29243b519/report.json`。
+Summary: `results/batch-summary.json`. Each batch's full report directory is indexed by this summary; reports contain the tested source file's SHA256 and actual CLI output. Initial report: `results/verify-8ab29243b519/report.json`.
 
-18个维度覆盖局部转换、随机机器、二进制加一、一元加法、原地翻转、空白擦除、空带/负地址、非平凡分片恢复、无限循环暂停、停机/卡住/预算区别、资源拒绝、停止、检查点篡改及机器绑定、格式拒绝、配置隔离、CLI不覆盖、重复字段拒绝和硬预算。
+The 18 dimensions cover local transitions, random machines, binary increment, unary addition, in-place flipping, blank erasure, empty tape/negative addresses, nontrivial segmented resume, pausing infinite loops, distinction among halt/stuck/budget, resource rejection, stop, checkpoint tampering and machine binding, format rejection, configuration isolation, CLI no-overwrite, duplicate-field rejection, and hard budget.
 
-实际演示 `results/demo-6751472cfe/`：111二进制加1，第3步PAUSED，第8步HALTED，结果1000；资源不足于第3步停止提交；STOP文件返回0新步骤；旧检查点拒绝覆盖。
+Actual demo `results/demo-6751472cfe/`: binary 111 incremented by 1; PAUSED at step 3, HALTED at step 8, result 1000; resource exhaustion stopped commit at step 3; STOP file returned 0 new steps; old checkpoint rejected without overwrite.
 
-## 不能由本结果推出的结论
+## Conclusions Not Supported by These Results
 
-- 不能推出固定硬件拥有无界时间/存储。
-- 不能推出所有Python实现路径、依赖和操作系统都被形式证明。
-- 不能推出任意机器是否会停机可被自动判定。
-- 不能推出自然语言目标已自动编译成正确机器描述。
-- 不能推出原提案器会发明任意新算法、自动改进自身或自主批准控制面更改。
-- 不能把此组件的checksum当成签名、权限隔离或不可伪造证据根。
+- They do not show that fixed hardware has unbounded time/storage.
+- They do not show that all Python implementation paths, dependencies, and operating systems are formally proven.
+- They do not show that it is possible to automatically decide whether any machine halts.
+- They do not show that a natural-language goal has been automatically compiled into a correct machine description.
+- They do not show that the original proposer invents arbitrary new algorithms, automatically improves itself, or autonomously approves control-plane changes.
+- The component's checksum must not be treated as a signature, permission isolation, or an unfalsifiable evidence root.
 
-后续内核检查已完成核心模型层：`formal/Simulation.lean` 中写入/位移、一步模拟、独立转换选择、初始状态及任意有限步执行保持关系通过Lean4.35.0。全部通用机编码定理、绝对head映射、Python源码refinement与持久化控制链仍未获内核认证。性能打分独立见 `BENCHMARK.md`，不能与证明等级互换。
+Subsequent kernel checking completed the core model layer: write/move, one-step simulation, independent transition selection, initial state, and preservation of the relation for arbitrary finite executions in `formal/Simulation.lean` passed Lean4.35.0. All universal-machine encoding theorems, absolute-head mapping, Python-source refinement, and persistent control chain remain uncertified by the kernel. Performance scoring is covered separately in `BENCHMARK.md` and must not be conflated with proof status.

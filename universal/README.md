@@ -1,22 +1,22 @@
-# 通用计算验证组件
+# Universal Computation Validation Component
 
-## 三个不同的结论
+## Three Distinct Conclusions
 
-- 抽象双栈解释器：在任意有限程序描述、可扩展无界存储、无全局步数上限假设下，图灵完备的构造性证明见 `PROOF.md`。
-- 实际 Python 实现：有预算、有停止和检查点；`verify.py` 检查其与独立稀疏带模型的有限一致性。不声称经过证明助手认证。
-- 原 AutoForge：仍为受限 i64 WASM 候选迭代器；此组件不自动接入发布，不解除候选权限，不证明自主生成任意系统。
+- Abstract two-stack interpreter: a constructive proof of Turing-completeness under the assumptions of an arbitrary finite program description, extensible unbounded storage, and no global step limit is provided in `PROOF.md`.
+- Actual Python implementation: it has budgets, stopping, and checkpoints; `verify.py` checks its finite consistency with an independent sparse-tape model. It does not claim certification by a proof assistant.
+- Original AutoForge: it remains a constrained i64 WASM candidate iterator; this component is not automatically connected to release, does not expand candidate permissions, and does not prove autonomous generation of arbitrary systems.
 
-本次判定及实测计数见 `VERDICT.md`，证明复核记录见 `REVIEW.md`，12批次逐项证据见 `results/batch-summary.json`。
+See `VERDICT.md` for the current assessment and measured counts, `REVIEW.md` for proof-review notes, and `results/batch-summary.json` for itemized evidence from all 12 batches.
 
-新增内核与基准：`python universal/kernel_check.py` 检查9个Lean形式模型定理；`python universal/benchmark.py --repeats 11` 运行正确性硬门与性能评分。前者范围见 `formal/README.md`，后者规则与实测见 `BENCHMARK.md`；不把模型认证扩大为Python实现认证。
+New kernel and benchmark: `python universal/kernel_check.py` checks 9 Lean formal-model theorems; `python universal/benchmark.py --repeats 11` runs the correctness hard gate and performance scoring. The former's scope is described in `formal/README.md`, and the latter's rules and measurements in `BENCHMARK.md`; do not broaden model certification into certification of the Python implementation.
 
-下一轮联合边界测试：`python universal/resilience.py`，覆盖长带、100段恢复、并发checkpoint、运行中停止和Lean/评分故障注入。逐项结果与限制见 `RESILIENCE.md`。
+Joint boundary tests for the next round: `python universal/resilience.py`, covering long tapes, recovery across 100 segments, concurrent checkpoints, stopping during execution, and Lean/scoring fault injection. Itemized results and limitations are in `RESILIENCE.md`.
 
-局部优化对照：`optimization_check.py --baseline <受信任的旧machine.py> --repeats 21`，验证旧检查点兼容、双栈排序和复制隔离，并交替计时。冻结基线、复跑命令与实测收益见 `BENCHMARK.md` 的“下一轮局部优化与同进程对照”。
+Local optimization comparison: `optimization_check.py --baseline <trusted old machine.py> --repeats 21` validates old-checkpoint compatibility, two-stack ordering, and copy isolation, and alternates timings. The frozen baseline, rerun command, and measured gains are in “Next-round local optimization and same-process comparison” in `BENCHMARK.md`.
 
-## 实际运行
+## Running It
 
-从 AutoForge 项目目录，在 PowerShell 执行：
+From the AutoForge project directory, run in PowerShell:
 
 ```powershell
 New-Item -ItemType Directory universal\results\manual
@@ -24,37 +24,37 @@ python universal\machine.py run universal\examples\increment.json --input '["1",
 python universal\machine.py resume universal\examples\increment.json universal\results\manual\paused.json --steps 20 --cells 100 --output universal\results\manual\halted.json
 ```
 
-第一次是 PAUSED，第2次 HALTED，观察带为位置 −1 的1与位置0、1、2的0，即二进制111加1得到1000。头可以移动到负位置，不截断到0。
+The first command returns PAUSED, and the second HALTED. The observed tape contains 1 at position −1 and 0 at positions 0, 1, and 2—that is, binary 111 incremented to 1000. The head can move to a negative position; it is not clamped to 0.
 
-无限向右写1的机器：
+Machine that writes 1 forever to the right:
 
 ```powershell
 python universal\machine.py run universal\examples\march.json --input '[]' --steps 20 --cells 100 --output universal\results\manual\march.json
 ```
 
-其结果为 PAUSED，不是 HALTED。此例由转换结构可看出永不进入停机状态；程序并未实现通用停机判定。
+Its result is PAUSED, not HALTED. From the transition structure, this example can be seen never to enter a halt state; the program does not implement a general halting decision procedure.
 
-停止：加 `--stop-file universal\results\manual\STOP`，由操作者在该路径创建文件。执行每个转换前检查；发现后返回 STOPPED。停止文件不会自动删除；正在完成的单步与文件出现之间没有硬件级原子中断保证。检查点保留当前位置，可在操作者移除该文件后显式resume。
+Stop: add `--stop-file universal\results\manual\STOP`, then have the operator create a file at that path. It is checked before each transition; when found, the program returns STOPPED. The stop file is not deleted automatically; there is no hardware-level atomic-interrupt guarantee between completing a step and the file appearing. The checkpoint preserves the current position, and execution can explicitly resume after the operator removes the file.
 
-## 预算与恢复
+## Budgets and Resumption
 
-- CLI 每次最多1,000,000转换，最多100,000存储槽；输入/输出检查点文件最多4MiB。
-- `--steps 0` 只观察当前终止条件，不推进转换。
-- HALTED：显式停机态；STUCK：无定义转换；PAUSED：本次步预算耗尽；RESOURCE_LIMIT：存储配额不够；STOPPED：操作者停止。
-- RESOURCE_LIMIT 在越界转换提交前返回，不破坏之前状态。
-- 输出路径必须不存在，绝不覆盖旧检查点；用临时文件＋同目录硬链接原子安装。文件系统不支持硬链接时明确失败。
-- 校验和绑定机器定义与状态，仅防误改，不是身份签名。拥有文件写权限的人可以重算校验和；restore也不证明该状态一定从初始输入可达。
-- 长符号可能先碰到检查点字节上限，即使单元数没越界。写入前拒绝不可再次读取的大文件；这不是硬性进程RSS配额。
-- Python库API供测试与可信调用者使用，不是恶意宿主代码的沙箱。CLI之外的宿主进程仍属于可信计算基。
+- Each CLI command is limited to 1,000,000 transitions and 100,000 storage slots; input and output checkpoint files are limited to 4 MiB.
+- `--steps 0` observes only the current termination condition and does not advance a transition.
+- HALTED: explicit halt state; STUCK: undefined transition; PAUSED: this step budget is exhausted; RESOURCE_LIMIT: insufficient storage quota; STOPPED: operator stopped execution.
+- RESOURCE_LIMIT is returned before an out-of-bounds transition is committed, preserving the prior state.
+- The output path must not already exist; old checkpoints are never overwritten. Installation is atomic using a temporary file and a hard link in the same directory. If the filesystem does not support hard links, the operation fails explicitly.
+- The checksum binds the machine definition and state and detects accidental changes only; it is not an identity signature. Anyone with write access to the file can recompute the checksum; restore also does not prove that the state is reachable from the initial input.
+- Long symbols may hit the checkpoint byte limit before the cell count limit. Before writing, the program rejects files too large to read back; this is not a hard process-RSS quota.
+- The Python library API is for tests and trusted callers; it is not a sandbox for malicious host code. The host process outside the CLI remains part of the trusted computing base.
 
-## 验证
+## Verification
 
 ```powershell
 python universal\verify.py
 ```
 
-证据写入 `universal/results/` 的独立目录；保存种子、计数、各维度结果、被测文件哈希及真实CLI输出。完整状态机协议见 `CONTRACT.md`。
+Evidence is written to an independent directory under `universal/results/`; it preserves seeds, counts, results by dimension, hashes of tested files, and actual CLI output. The complete state-machine protocol is in `CONTRACT.md`.
 
-## 扩展边界
+## Extensibility Boundary
 
-机器的状态数、符号集和转换表属于数据；新增机器不修改解释器。原型可以据此验证变长输入、持久计算状态、暂停恢复和通用控制流。不过把它作为新候选类型接入AutoForge，仍需独立的目标契约、双线提案和仲裁接口；本组件不会自行替换现有安全核心。
+The machine's state set, symbol set, and transition table are data; adding a machine does not modify the interpreter. Accordingly, the prototype can validate variable-length inputs, persistent computational state, pause/resume, and general control flow. However, connecting it to AutoForge as a new candidate type still requires an independent target contract, two-lane proposals, and an arbitration interface; this component does not replace the existing safety core by itself.

@@ -1,24 +1,24 @@
-# 构造性证明复核记录
+# Constructive Proof Review Record
 
-日期：2026-10-30。
+Date: 2026-10-30.
 
-审查对象：PROOF.md 命题U；不审定原AutoForge可自主生成任意系统，不将本文件当成第三方数学认证。
+Review scope: proposition U in PROOF.md; does not determine that the original AutoForge can autonomously generate arbitrary systems, and this file is not third-party mathematical certification.
 
-两名独立子任务审阅者分别负责实现/验证，在审阅证明时均未发现核心模拟论证的实质数学缺口；它们仍是同一任务体系内的模型审阅，不是独立学术审稿或证明助手内核。
+Two independent subtask reviewers separately handled implementation/verification and, while reviewing the proof, found no substantive mathematical gap in the core simulation argument; they remain model reviewers within the same task system, not independent academic referees or proof-assistant kernels.
 
-核对内容：
-- 任意有限状态/符号集按编号编码，通用解释器代码不随源机器改变。
-- 双栈末尾为最近单元，与初始输入的右栈逆序一致。
-- L/R/S转换先写后移，空栈取blank，解码位置保持正确。
-- 有限前缀归纳及显式HALTED/无转换STUCK保持；发散只在无全局资源上限语义中讨论。
-- 查表、符号比较、push/pop与有限字串搬移均可由有限控制执行，无不可计算oracle。
-- 资源有界的实际Python实现与抽象无界模型明确区分。
+Items checked:
+- Any finite state/symbol set is encoded by indices; the universal interpreter code does not change with the source machine.
+- The last element of each double stack is the nearest cell, consistent with the initial input's right stack in reverse order.
+- L/R/S transitions write before moving; an empty stack reads blank; decoding preserves the correct position.
+- Finite-prefix induction and explicit HALTED/no-transition STUCK are preserved; divergence is discussed only under semantics without a global resource limit.
+- Table lookup, symbol comparison, push/pop, and finite-string movement can all be performed by finite control, with no uncomputable oracle.
+- The resource-bounded actual Python implementation is clearly distinguished from the abstract unbounded model.
 
-审查建议及处理：
-1. 左移分支不只写“对称”，补全旧h−1、新右栈顶及左右第j格的索引对应——已落实。
-2. 编码补充列表长度前缀与分隔符不出现在数字码中，明确唯一解码——已落实。
-3. 第8节属于高层有限带机实现构造，不是逐条五元组列表或形式化refinement证明——保留此限制，不升级为内核认证。
+Review recommendations and disposition:
+1. For the left-move branch, do not merely say “symmetric”; spell out the old h−1, new right-stack top, and index correspondence for the left and right cells at j — done.
+2. Add list-length prefixes to the encoding and specify that separators do not appear in digit codes, making decoding unique — done.
+3. Section 8 is a high-level construction of a finite-tape-machine implementation, not an explicit list of five-tuples or a formal refinement proof — limitation retained; this is not upgraded to kernel certification.
 
-实现审查发现：检查点校验条件缺失语句、输出所需os导入缺失，以及可能写出超过恢复读取上限的检查点；在运行验收前修复。验证器初稿复用了双栈表示，独立性不足，要求改用绝对地址稀疏带；一元加法案例原来多计一个标记，要求修正为真实2+1=3。未将这些初稿计作通过证据。
+Implementation review found a missing statement in checkpoint validation, a missing os import needed for output, and the possibility of writing a checkpoint larger than the restore-read limit; these were fixed before runtime acceptance. The initial verifier reused the double-stack representation and was not independent enough; it was required to use an absolute-address sparse tape instead. The unary addition example originally counted one extra marker and was required to be corrected to actual 2+1=3. These initial drafts were not counted as passing evidence.
 
-最终可承诺：U具有可核查的构造性证明；实现仅在报告列出的有限案例中验证一致；未进行Lean/Coq/Isabelle内核检查，未证明Python解释器、操作系统、序列化栈全链路正确。
+Final claim supported: U has a checkable constructive proof; the implementation has been checked for consistency only in the finite cases listed in the report; no Lean/Coq/Isabelle kernel check was performed, and the full Python interpreter, operating system, and serialization stack have not been proven correct end to end.

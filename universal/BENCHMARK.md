@@ -1,89 +1,89 @@
-# Benchmark与证明内核分开计量
+# Benchmarking and the Proof Kernel Separately
 
-## 使用
+## Usage
 
-从项目目录：
+From the project directory:
 
 ```powershell
 python universal\kernel_check.py
 python universal\benchmark.py --repeats 7
 ```
 
-内核检查使用项目内固定Lean4.35.0，运行formal/Simulation.lean并输出定理依赖审计，再要求故意错误的0=1定理被拒绝。证明内核只检查Lean模型，不认证Python源代码或整个图灵完备性编码论证。
+The kernel check uses the project-pinned Lean4.35.0, runs formal/Simulation.lean and outputs a theorem dependency audit, then requires an intentionally false theorem, 0=1, to be rejected. The proof kernel checks only the Lean model; it does not certify the Python source code or the entire Turing-completeness encoding argument.
 
-benchmark不以历史内核报告冒充本次内核检查，报告该项NOT_EVALUATED且不计入性能分；内核证据由独立报告给出。
+The benchmark does not pass off a historical kernel report as a kernel check for this run: it reports that item as NOT_EVALUATED and excludes it from the performance score. Kernel evidence is provided in a separate report.
 
-## 正确性硬门
+## Correctness Hard Gate
 
-每次基准先运行真实verify.py，要求退出0且报告finite_conformance=PASS。每个计时样本在计时区间外逐项验证预期状态、头位置、步数和全部非blank单元。检查点恢复后须与未中断执行及独立指定的50000格结果一致。
+Every benchmark first runs the real verify.py and requires exit code 0 and finite_conformance=PASS in the report. Every timed sample verifies the expected state, head position, step count, and all nonblank cells individually outside the timed interval. After checkpoint resume, the result must match both uninterrupted execution and the independently specified 50000-cell result.
 
-任一正确性门、运行异常或结果不匹配：总分0、退出码1，保留失败报告。性能不能抵消正确性失败。通过门不证明安全无漏洞。
+Any correctness gate failure, runtime exception, or result mismatch: total score 0, exit code 1, and the failure report is retained. Performance cannot offset a correctness failure. Passing the gates does not prove the absence of security vulnerabilities.
 
-## 工作负载与计量
+## Workloads and Measurements
 
-- 原地循环：30000步，不增长磁带。
-- 向右写带：30000步，产生30000个1。
-- 双向往返：30000步，头在两个相邻空白格之间交替；不是长带扫描吞吐。
-- 二进制进位：30000个1，低位在前，执行30001步，翻为30000个0并在末尾写1。
-- 检查点/恢复：40001存储槽，继续10000步。
+- In-place loop: 30000 steps, with no tape growth.
+- Right-writing tape: 30000 steps, producing 30000 ones.
+- Bidirectional shuttle: 30000 steps, with the head alternating between two adjacent blank cells; this is not long-tape scan throughput.
+- Binary carry: 30000 ones, least-significant bit first; executes 30001 steps, flips them to 30000 zeros, and writes a 1 at the end.
+- Checkpoint/resume: 40001 storage slots, followed by 10000 steps.
 
-默认1次预热＋7次样本。保存每次秒数、min/median/p95/max；p95采用nearest-rank，7个样本时等于最大值，不冒充大样本尾延迟。吞吐用实际转换次数除以run耗时。编译耗时另记，不混入执行吞吐；初始输入准备不计入run，run自带配置校验/复制计入。
+Default: 1 warmup + 7 samples. Save each duration in seconds and min/median/p95/max; p95 uses nearest-rank and equals the maximum with 7 samples, so it is not presented as a large-sample tail latency. Throughput is actual transitions divided by run duration. Compilation duration is recorded separately and is not included in execution throughput; initial input preparation is excluded from run, while run's own configuration validation/copy is included.
 
-检查点计时为内存中构造＋规范编码哈希；恢复计时为内存对象校验＋哈希＋复制，**不包含磁盘fsync或文件读取**。此数值不应解释为持久化RTO。
+Checkpoint timing is in-memory construction + canonical encoding hash; restore timing is in-memory object validation + hash + copy, **excluding disk fsync or file reads**. This value should not be interpreted as persistence RTO.
 
-tracemalloc单独执行一次非计时采样，报告Python追踪分配峰值，不是RSS，也不包含全部解释器/本机内存。
+tracemalloc runs once as a separate untimed sample and reports the peak Python-tracked allocation; it is not RSS and does not include all interpreter/native memory.
 
-## 评分规则v1
+## Scoring Rules v1
 
-`benchmark-policy.json`是操作者定义的工程目标，不是行业基准：
+`benchmark-policy.json` defines operator-set engineering targets, not an industry benchmark:
 
-- 原地循环目标100000转换/秒；其他3类各10000转换/秒。
-- checkpoint median≤50ms，p95≤100ms；restore median≤50ms。
-- 每项吞吐分：min(100,100×实际/目标)。
-- 每项延迟分：实际≤目标得100，否则100×目标/实际。
-- 4项吞吐各权重0.2，3项延迟各0.1；按权重和1.1归一化加权平均。
-- 得分封顶100，同时报告未截断的吞吐目标倍数和全部原始样本。
+- In-place loop target: 100000 transitions/second; each of the other 3 classes: 10000 transitions/second.
+- Checkpoint median≤50ms, p95≤100ms; restore median≤50ms.
+- Score per throughput item: min(100,100×actual/target).
+- Score per latency item: 100 if actual≤target, otherwise 100×target/actual.
+- Each of the 4 throughput items has weight 0.2 and each of the 3 latency items has weight 0.1; weighted mean normalized by total weight 1.1.
+- Score capped at 100; also report uncapped throughput target multiples and all raw samples.
 
-**100分只表示这组工程目标全部达标，不表示图灵完备、智能、自迭代能力、安全性或未来扩展性达到100%。** 不为当前结果临时抬高/降低目标；若增加更严格目标须新score_version并保持旧报告可解释。
+**A score of 100 means only that all engineering targets in this set were met; it does not mean Turing-completeness, intelligence, self-iteration capability, security, or future extensibility is at 100%.** Do not raise or lower targets for the current results; any stricter targets added must use a new score_version and keep old reports interpretable.
 
-报告保存机器/CPU/Python信息、源码和规则哈希、完整policy快照、样本及得分计算。跨机器比对必须同时展示环境、重复次数、版本和原始值；此基准非生产负载或长时稳定性测试。
+The report saves machine/CPU/Python information, source and rules hashes, a complete policy snapshot, samples, and score calculations. Cross-machine comparisons must show the environment, repetition count, version, and raw values together; this benchmark is not a production-load or long-duration stability test.
 
-## 本机实测（11次样本，score_version=1）
+## Local Measurements (11 Samples, score_version=1)
 
-报告：`results/benchmark-814195d75887/report.json`。正确性门通过，总分100/100。目标是预先定义的保守门槛，不能把封顶分解释为相对最优。
+Report: `results/benchmark-814195d75887/report.json`. Correctness gates passed, total score 100/100. The targets are predefined conservative thresholds; a capped score must not be interpreted as relatively optimal.
 
-|工作负载|中位吞吐（转换/秒）|中位执行时间|p95执行时间|
+|Workload|Median throughput (transitions/second)|Median execution time|p95 execution time|
 |---|---:|---:|---:|
-|原地循环|3,341,725|8.977 ms|9.254 ms|
-|右向增长|2,269,117|13.221 ms|16.577 ms|
-|相邻格往返|2,022,108|14.836 ms|15.534 ms|
-|二进制进位|2,034,739|14.744 ms|19.679 ms|
+|In-place loop|3,341,725|8.977 ms|9.254 ms|
+|Rightward growth|2,269,117|13.221 ms|16.577 ms|
+|Adjacent-cell shuttle|2,022,108|14.836 ms|15.534 ms|
+|Binary carry|2,034,739|14.744 ms|19.679 ms|
 
-40001槽状态：内存检查点中位5.223ms，恢复中位4.586ms。单独tracemalloc采样峰值246832字节（非RSS）。环境为Windows、CPython3.11.6；完整CPU和样本见JSON。
+40001-slot state: in-memory checkpoint median 5.223ms, restore median 4.586ms. Separate tracemalloc sample peak 246832 bytes (not RSS). Environment: Windows, CPython3.11.6; complete CPU and samples are in the JSON.
 
-评分负向控制：在独立临时副本把步数计数从每次+1改为+2，正确性门拒绝，benchmark退出1并强制0分。证据：`results/score-negative-8c6d19b4e57a/report.json`。生产machine.py未改动。
+Negative scoring control: in an independent temporary copy, changed the step counter from +1 to +2 on each step. The correctness gate rejected it, benchmark exited 1 and forced a score of 0. Evidence: `results/score-negative-8c6d19b4e57a/report.json`. Production machine.py was not changed.
 
-负向控制原报告中的临时路径为当时执行来源；其精确字节已保留在同目录 `negative-verifier-report.json`，错误副本保存在 `machine-mutant.py.txt`。临时副本已清理，不改写历史报告哈希。
+The temporary path in the negative-control original report refers to the source used at that time; its exact bytes are retained in `negative-verifier-report.json` in the same directory, and the faulty copy is saved as `machine-mutant.py.txt`. The temporary copy was cleaned up; the historical report hash was not rewritten.
 
-## 下一轮局部优化与同进程对照
+## Next Local Optimization and Same-Process Comparison
 
-`machine.py` 合并栈符号校验/复制、直接按绝对坐标顺序生成观察结果而不排序、每次run只构造一次STOP路径（仍逐步检查存在性）。保留输入副本隔离、资源限制、checkpoint格式与checksum；不改变评分policy或Lean模型。
+`machine.py` combines stack-symbol validation/copy, generates observations directly in absolute-coordinate order without sorting, and constructs the STOP path once per run (while still checking for its existence on every step). Input-copy isolation, resource limits, checkpoint format, and checksum are preserved; the scoring policy and Lean model are unchanged.
 
-先冻结原实现 `results/optimization-dc6080e19239/baseline_machine.py`，profile证据在同目录 `profile-before.txt`。使用21次交替先后顺序、无profiler计时；内存单独采样。结果：`results/optimization-check-9d8c093eb7a7/report.json`。
+First freeze the original implementation at `results/optimization-dc6080e19239/baseline_machine.py`; profiling evidence is in `profile-before.txt` in the same directory. Use 21 alternating-order runs, untimed by a profiler; sample memory separately. Results: `results/optimization-check-9d8c093eb7a7/report.json`.
 
-|操作|优化前中位ms|优化后中位ms|加速比|
+|Operation|Median ms before optimization|Median ms after optimization|Speedup|
 |---|---:|---:|---:|
-|80001槽观察|18.427|8.005|2.302|
-|80001槽checkpoint|7.905|5.398|1.464|
-|80001槽restore|8.058|5.402|1.492|
-|30000步执行（无STOP路径）|13.276|13.451|0.987|
-|5000步执行（逐步STOP检查）|158.763|131.254|1.210|
+|80001-slot observation|18.427|8.005|2.302|
+|80001-slot checkpoint|7.905|5.398|1.464|
+|80001-slot restore|8.058|5.402|1.492|
+|30000-step execution (without STOP path)|13.276|13.451|0.987|
+|5000-step execution (per-step STOP check)|158.763|131.254|1.210|
 
-观察的tracemalloc峰值从5525100降到5205084字节；保存/恢复峰值不变，不能声称整体内存均下降。普通执行没有测得提升，约1.3%差异不据此归因；未固定CPU频率或排除全部后台负载。这是本机固定工作负载比较，不是跨机器性能保证。
+Observation tracemalloc peak decreased from 5525100 to 5205084 bytes; save/restore peaks did not change, so an overall memory decrease cannot be claimed. No improvement was measured in ordinary execution; the approximately 1.3% difference is not attributed on this basis. CPU frequency was not fixed and all background load was not excluded. This is a comparison on fixed local workloads, not a cross-machine performance guarantee.
 
-针对性回归验证旧checkpoint兼容、负head两侧带排序、复制隔离、60次非法成员拒绝和500组种子固定双栈状态前后等价。完整联合验收14项通过，证据 `results/resilience-3e2e23f5c2cc/report.json`；原9个Lean定理及语义变异拒绝均通过。
+Targeted regression validation covered old-checkpoint compatibility, tape ordering on both sides of a negative head, copy isolation, rejection of 60 invalid members, and equivalence of double-stack states before and after across 500 fixed seeds. All 14 items in the complete joint acceptance passed; the original 9 Lean theorems and semantic mutation rejection also passed.
 
-复跑（从项目根目录；baseline是受信任的本地Python代码，不接受未知来源文件）：
+Rerun (from the project root; baseline is trusted local Python code—do not accept files from unknown sources):
 
 ```powershell
 python universal/optimization_check.py --baseline universal/results/optimization-dc6080e19239/baseline_machine.py --repeats 21

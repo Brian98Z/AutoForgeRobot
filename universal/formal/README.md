@@ -1,36 +1,36 @@
-# Lean证明内核检查
+# Lean Proof-Kernel Check
 
-运行：`python universal/kernel_check.py`。
+Run: `python universal/kernel_check.py`.
 
-工具链固定Lean4.35.0，官方发行压缩包SHA256已校验，来源和哈希见toolchain.json。仅使用Lean内置库，不依赖mathlib下载。
+Toolchain pinned to Lean4.35.0; SHA256 of the official distribution archive is verified, with provenance and hash in toolchain.json. Uses only Lean's built-in library and does not depend on downloading mathlib.
 
-## 形式化对象
+## Formalized Objects
 
-Simulation.lean定义独立的：
-- Source：以头为原点的无限函数带；位置为here/left n/right n。
-- Target：有限左右列表和当前格，列表头为最近符号。
-- 源带写入与位移：直接重定位位置函数，不调用目标执行器。
-- 目标执行器：列表push/pop，空列表读取blank。
-- 两边独立的转换查找与有界执行，关系保持用归纳证明。
+Simulation.lean defines independent:
+- Source: an infinite function tape with the head as origin; positions are here/left n/right n.
+- Target: finite left/right lists and the current cell; the list head is the nearest symbol.
+- Source-tape write and movement: directly relocates the position function, without calling the target executor.
+- Target executor: list push/pop, with an empty list reading blank.
+- Independent transition lookup and bounded execution on both sides; relation preservation is proved by induction.
 
-Python列表末尾为最近符号，Lean列表头为最近符号，二者需取reverse对应。这里证明的是Lean中的模型关系，不是Python列表reverse、JSON解析、checkpoint、资源策略或OS执行的形式验证。相对坐标模型不含Python的绝对head元数据。
+Python's list end is the nearest symbol, while Lean's list head is the nearest symbol; the two correspond by reverse. What is proved here is the relation in the Lean model, not formal verification of Python list reverse, JSON parsing, checkpoint, resource policy, or OS execution. The relative-coordinate model does not include Python's absolute-head metadata.
 
-## 判定要求
+## Verdict Requirements
 
-- Lean正常退出，warningAsError启用。
-- 不允许sorry/admit、自定义axiom、unsafe或native_decide绕过。
-- 打印最终定理依赖；不得出现sorryAx。
-- 错误命题(0:Nat)=1必须被同一检查器拒绝。
-- 保存完整stdout/stderr、源文件/二进制SHA256和编译产物。
+- Lean exits normally, with warningAsError enabled.
+- No sorry/admit, custom axiom, unsafe, or native_decide bypasses.
+- Print final theorem dependencies; sorryAx must not appear.
+- The false proposition (0:Nat)=1 must be rejected by the same checker.
+- Save complete stdout/stderr, source/binary SHA256, and compilation artifacts.
 
-Lean标准逻辑公理如propext、Quot.sound可能因函数外延性和simp出现，须如实列出，不能称完全无公理。
+Lean standard-logic axioms such as propext and Quot.sound may arise from function extensionality and simp; list them accurately and do not call the proof entirely axiom-free.
 
-整个通用机编码的可计算性、无界模拟的最终通用性结论及Python refinement仍分别属于PROOF.md的构造论证和有限实测范围；不能因局部/有限步模型定理通过便改称全栈完全认证。
+Computability of the entire universal-machine encoding, the final universality claim for unbounded simulation, and Python refinement remain respectively within the constructive argument in PROOF.md and the scope of finite measurements; passing local/finite-step model theorems must not be described as full-stack certification.
 
-## 本次内核结果
+## This Kernel Run
 
-Lean4.35.0已通过9个定理：decode_write、decode_left、decode_right、decode_stay、one_step、step_simulation、initial_related、fuel_simulation、input_simulation。最终定理对任意Nat状态/符号、任意有限输入、任意转换函数δ及任意自然数fuel量化；不是只检查几个固定步数样例。
+Lean4.35.0 passed 9 theorems: decode_write, decode_left, decode_right, decode_stay, one_step, step_simulation, initial_related, fuel_simulation, input_simulation. The final theorem quantifies over arbitrary Nat states/symbols, arbitrary finite input, arbitrary transition function δ, and arbitrary natural-number fuel; it does not check only a few fixed-step examples.
 
-源/目标各自按自身状态与读到的符号查δ，分别运行runSource/runTarget，非人工同步挑选同一分支。转移函数任意性的模拟定理不证明任意δ可计算；有限表编码的有效性仍在PROOF.md构造论证中。
+Source and target each look up δ using their own state and read symbol, then independently run runSource/runTarget, rather than manually selecting the same branch in sync. The simulation theorem's arbitrary transition function does not prove arbitrary δ computable; validity of finite-table encoding remains in PROOF.md's constructive argument.
 
-证据：`../results/kernel-887c58d426db/report.json`（相对本目录）。全部依赖为标准propext、Quot.sound，没有sorryAx。故意错误命题被拒绝；正式证明源禁用sorry/admit/custom axiom/unsafe/native_decide绕过。工具链压缩包SHA256与GitHub官方资产digest一致。
+Evidence: `../results/kernel-887c58d426db/report.json` (relative to this directory). All dependencies are the standard propext and Quot.sound, with no sorryAx. The intentionally false proposition was rejected; the official proof source prohibits sorry/admit/custom axiom/unsafe/native_decide bypasses. The toolchain archive SHA256 matches the GitHub official asset digest.

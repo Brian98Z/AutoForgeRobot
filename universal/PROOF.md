@@ -1,136 +1,136 @@
-# 双栈解释器的通用性：构造性证明与实现边界
+# Universality of the Two-Stack Interpreter: Constructive Proof and Implementation Boundary
 
-## 0. 精确命题与证明等级
+## 0. Exact Claim and Proof Level
 
-**命题 U**：下面定义的固定解释算法 A，在程序描述可为任意有限长度、两个栈可任意有限增长且没有全局步数上限的抽象语义下，能够模拟任意确定性单带双向图灵机在任意有限输入上的计算，保持逐步配置、输出及停止/发散行为。因此该抽象计算模型在标准意义下图灵完备。
+**Claim U**: Under abstract semantics where the program description may have any finite length, the two stacks may grow by any finite amount, and there is no global step limit, the fixed interpretation algorithm A defined below can simulate the computation of any deterministic two-way single-tape Turing machine on any finite input, preserving step-by-step configurations, output, and termination/divergence behavior. Therefore, this abstract computational model is Turing-complete in the standard sense.
 
-本文件提供数学构造和归纳证明，不是以测试次数推出 U。后续 `formal/Simulation.lean` 已经Lean4.35.0内核检查，通过的是相对位置带模型的写入、移动、独立一步模拟、初始配置及任意有限步模拟（含从输入开始的组合定理），不是本文件全部U的端到端认证。完整编码通用性、Python、序列化和操作系统的形式化refinement仍未完成；有限差分测试只能为实际实现提供证据。
+This document gives a mathematical construction and an inductive proof; it does not infer U from the number of tests. The subsequent `formal/Simulation.lean` has been checked by the Lean 4.35.0 kernel. What passes is writing, movement, independent one-step simulation, initial configuration, and simulation for any finite number of steps (including a composition theorem starting from the input) for a relative-position tape model. It is not end-to-end certification of all of U in this document. Formalization of complete encoding universality, Python, serialization, and operating-system refinement remains incomplete; finite differential tests can provide evidence for the actual implementation only.
 
-**不作出的命题**：有 100,000 存储槽位和每次命令 1,000,000 步限制的实际 Python 进程，或原来的固定 i64 WASM 自动发布系统，能够完成任意无界计算。新增组件也不证明原提案器可自主发明任意算法。
+**Claims not made**: The actual Python process, with a 100,000-slot storage limit and a 1,000,000-step limit per command, or the original fixed-i64 WASM automatic-release system, can perform arbitrary unbounded computation. The added component also does not prove that the original proposer can autonomously invent arbitrary algorithms.
 
-## 1. 源机器
+## 1. Source Machine
 
-令 M=(Q,Gamma,b,q0,H,delta)：Q、Gamma 为有限非空集合，b 属于 Gamma，q0 属于 Q，H 包含于 Q；delta 为 (Q\\H)×Gamma 到 Q×Gamma×{L,R,S} 的部分函数。
+Let M=(Q,Gamma,b,q0,H,delta): Q and Gamma are finite nonempty sets, b belongs to Gamma, q0 belongs to Q, H is a subset of Q; delta is a partial function from (Q\\H)×Gamma to Q×Gamma×{L,R,S}.
 
-源配置 C=(q,T,h,n)，其中 T:Z→Gamma 仅有限多个位置不是 b，h 属于 Z，n 属于自然数。输入 w=w0…wk−1 放在位置 0…k−1，其余位置为 b，h=n=0。
+A source configuration is C=(q,T,h,n), where T:Z→Gamma is nonblank at only finitely many positions, h belongs to Z, and n belongs to the natural numbers. Input w=w0…wk−1 is placed at positions 0…k−1, with all other positions b; h=n=0.
 
-当 q 属于 H 时 HALTED。当 q 不属于 H 且 delta(q,T(h)) 未定义时 STUCK。两者都没有后继，但实现中标签不同。否则令 delta(q,T(h))=(q',a,d)，先写 T'(h)=a，其他位置不变，再根据 d 更新 h'=h−1/h+1/h，n'=n+1。
+When q belongs to H, the status is HALTED. When q does not belong to H and delta(q,T(h)) is undefined, the status is STUCK. Neither has a successor, but the implementation uses distinct labels. Otherwise let delta(q,T(h))=(q',a,d); first write T'(h)=a, with all other positions unchanged, then update h'=h−1/h+1/h according to d, and n'=n+1.
 
-带显式停机状态/部分函数/LRS 的这个模型包含常规 LR 图灵机。需要统一停机约定时，对每个未定义的非停机状态/符号补一条写回原符号、S 移动到新 halt 状态的边；这只增加一个可计算的有限描述及至多一步。若标准模型不允许停机态出边，直接保留相同约定即可。
+This model with explicit halt states, a partial function, and L/R/S includes conventional LR Turing machines. To use a unified halting convention, add, for each undefined non-halt state/symbol pair, an edge that writes back the original symbol, moves S, and enters a new halt state; this adds only a computable finite description and at most one step. If the standard model disallows outgoing edges from halt states, retain the same convention directly.
 
-## 2. 可计算编码，不把机器藏进解释器
+## 2. Computable Encoding; The Machine Is Not Hidden in the Interpreter
 
-按输入声明顺序为 Q、Gamma 分配非负编号。对自然数 i 定义 code(i)=1^i0。使用固定有限字母表 {0,1,#,;}，机器编码为：
+Assign each member of Q and Gamma a nonnegative number in declaration order. For a natural number i define code(i)=1^i0. Use the fixed finite alphabet {0,1,#,;}. The machine encoding consists of:
 
-- 状态数、符号数、blank 编号、start 编号；
-- 停机编号列表；
-- 转换列表，每行五个自然数：state,read,next,write,move，其中 L/R/S 分别编号 0/1/2。
-- 输入为符号编号列表。
+- The number of states, number of symbols, blank index, and start index;
+- The list of halt indices;
+- The transition list, with five natural numbers per row: state,read,next,write,move, where L/R/S are numbered 0/1/2.
+- The input as a list of symbol indices.
 
-字段用 #、记录用 ; 分隔；每个列表先编码长度，随后恰好该数目的元素/记录。数字码只含0/1，不含分隔符，0为每个unary数字的终止符，因此空列表、零编号和相邻记录都可唯一解码。给定合法有限 M,w，编码算法有限次枚举并输出上述字串，必然终止。编码长度可以随 M,w 增长，没有全局上界。JSON 文件只是可读外层格式，不是数学编码的限制。
+Separate fields with # and records with ;. Prefix each list with its length, followed by exactly that many elements/records. The numeric codes contain only 0/1, not separators, and 0 terminates each unary number, so empty lists, index zero, and adjacent records can all be uniquely decoded. Given any valid finite M,w, the encoding algorithm enumerates a finite number of items and outputs the string above, so it necessarily terminates. The encoding length may grow with M,w and has no global upper bound. JSON files are only a human-readable outer format and do not constrain the mathematical encoding.
 
-固定解释算法 A 的循环只有：读取当前状态及符号编号，扫描转换记录找匹配，复制 next/write/move 字段，更新两个栈，然后重复。**A 的代码不随 M 改变；M 的全部差异只在有限输入数据中。** 哈希表是具体实现优化，不是证明的 oracle；抽象查表可顺序扫描有限记录，因此每次匹配必然有限结束。
+The fixed interpretation algorithm A has only this loop: read the current state and symbol index, scan the transition records for a match, copy the next/write/move fields, update the two stacks, and repeat. **A's code does not change with M; all differences in M are only in finite input data.** Hash tables are a concrete implementation optimization, not an oracle in the proof; abstract lookup can scan the finite records sequentially, so every lookup terminates in finite time.
 
-## 3. 目标配置与解码映射
+## 3. Target Configuration and Decoding Map
 
-A 的配置 X=(q,L,c,R,h,n)。L、R 是 Gamma 上的有限序列，末尾为栈顶；c 为当前格。令 |L|=l，|R|=r，数组下标从 0 开始。
+A's configuration is X=(q,L,c,R,h,n). L and R are finite sequences over Gamma, with the last element as stack top; let |L|=l and |R|=r, and let array indices start at 0.
 
-解码 D(X)=(q,T,h,n)：
+Decode D(X)=(q,T,h,n):
 
-- T(h)=c；
-- 对 1≤j≤l，T(h−j)=L[l−j]；
-- 对 1≤j≤r，T(h+j)=R[r−j]；
-- 其余 T(i)=b。
+- T(h)=c;
+- For 1≤j≤l, T(h−j)=L[l−j];
+- For 1≤j≤r, T(h+j)=R[r−j];
+- All other T(i)=b.
 
-多余的栈底 blank 不影响解码，不要求表示唯一。h 可能为负，与 |L| 没有固定等式；初始不变式只保证 |h|≤n。
+Extra blank symbols at the bottoms of stacks do not affect decoding, so the representation need not be unique. h may be negative and has no fixed equality with |L|; the initial invariant guarantees only |h|≤n.
 
-任意有限支撑源配置都可表示：选包含头及全部非空白格的有限区间，将头左侧按从远到近的顺序放入 L，将右侧按从远到近的逆向顺序放入 R。故该表示不会遗漏任何有限时刻可达的源配置。
+Any source configuration with finite support can be represented: choose a finite interval containing the head and all nonblank cells, put the cells to the left of the head in L in order from farthest to nearest, and put the cells to the right in R in reverse order from farthest to nearest. Thus this representation omits no source configuration reachable at any finite time.
 
-## 4. 固定更新规则
+## 4. Fixed Update Rules
 
-以 L·a 表示在 L 末尾 push a，pop(empty) 返回 (empty,b)。查到 delta(q,c)=(q',a,d) 后：
+Let L·a denote pushing a onto the end of L; pop(empty) returns (empty,b). After looking up delta(q,c)=(q',a,d):
 
-- **S**：X'=(q',L,a,R,h,n+1)。
-- **R**：令 pop(R)=(R0,c0)，X'=(q',L·a,c0,R0,h+1,n+1)。
-- **L**：令 pop(L)=(L0,c0)，X'=(q',L0,c0,R·a,h−1,n+1)。
+- **S**: X'=(q',L,a,R,h,n+1).
+- **R**: Let pop(R)=(R0,c0); X'=(q',L·a,c0,R0,h+1,n+1).
+- **L**: Let pop(L)=(L0,c0); X'=(q',L0,c0,R·a,h−1,n+1).
 
-HALTED/STUCK 无更新规则。没有调模型、调用用户 Python、外部文件访问或“猜下一状态”的步骤。
+HALTED/STUCK have no update rule. There is no model call, user Python invocation, external file access, or step that “guesses the next state.”
 
-## 5. 初始保持引理
+## 5. Initial-Preservation Lemma
 
-空输入：L=R=[]、c=b、h=n=0，显然 D(X0) 的整条带为空白。
+For empty input: L=R=[], c=b, h=n=0, so the entire tape decoded by D(X0) is blank, as required.
 
-非空输入：L=[]、c=w0、R=[wk−1,…,w1]、h=n=0。对 j=1…k−1，R[(k−1)−j]=wj，因此解码恰为源输入带；其他格为空白。状态为 q0。故 D(X0)=C0。
+For nonempty input: L=[], c=w0, R=[wk−1,…,w1], h=n=0. For j=1…k−1, R[(k−1)−j]=wj, so decoding gives exactly the source input tape; every other cell is blank. The state is q0. Therefore D(X0)=C0.
 
-## 6. 一步模拟引理
+## 6. One-Step Simulation Lemma
 
-假设 D(X)=C 且源存在转换。二者状态和头下符号相同，所以查表取得同一条 delta(q,c)=(q',a,d)。
+Assume D(X)=C and the source has a transition. The states and symbols under the head match, so lookup obtains the same delta(q,c)=(q',a,d).
 
 ### S
 
-头位置不变，目标仅把 c 换为 a；左右栈均不变，所以恰写 T(h)=a。状态、步数也与源相同。
+The head position is unchanged, and the target only replaces c with a; both stacks remain unchanged, so exactly T(h)=a is written. The state and step count also match the source.
 
-### R（右栈非空）
+### R (right stack nonempty)
 
-原 R=R0·c0，新头 h+1 扫描 c0，即原 T(h+1)。新 L=L·a：距新头 1 的格是原 h，值 a；距新头 j≥2 的格对应原左栈距旧头 j−1 的格，值未变。新 R0 让新头右方第 j 格对应旧头右方第 j+1 格。除此之外均为空白。故 D(X') 正好是源写后右移的配置。
+The original R=R0·c0, and the new head h+1 scans c0, which is the original T(h+1). New L=L·a: the cell at distance 1 from the new head is the old h, with value a; each cell at distance j≥2 on the left corresponds to the cell at distance j−1 in the old left stack, with its value unchanged. The new R0 makes each cell at distance j to the new head's right correspond to the cell at distance j+1 to the old head's right. All other cells are blank. Therefore D(X') is exactly the source configuration after writing and moving right.
 
-### R（右栈空）
+### R (right stack empty)
 
-由解码定义，旧头全部右方格为空白；pop 返回 b，故新头读 b。L·a 保存已写旧头格，其余位置同上，成立。
+By the decoding definition, all cells to the right of the old head are blank; pop returns b, so the new head reads b. L·a stores the old head cell after the write, and all other position correspondences are as above. The claim follows.
 
 ### L
 
-若 L=L0·c0，新头 h−1 读 c0=旧 T(h−1)。新 R=R·a：距新头右方1的格为旧 h，写入值 a；右方第 j≥2 格对应旧头右方第 j−1 格，保持原值。新 L0 的左方第 j 格对应旧头左方第 j+1 格，保持原值。若 L 为空，旧头左方全部是 blank，pop返回 b，其他对应关系不变。因此解码恰为源写后左移配置。
+If L=L0·c0, the new head h−1 reads c0=old T(h−1). New R=R·a: the cell at distance 1 to the right of the new head is the old h, now holding a; each cell at distance j≥2 to the right corresponds to the old head's cell at distance j−1, unchanged. Each cell at distance j to the left in the new L0 corresponds to the old head's cell at distance j+1 to the left, unchanged. If L is empty, all cells to the old head's left were blank and pop returns b; the other correspondences remain unchanged. Thus decoding gives exactly the source configuration after writing and moving left.
 
-所有分支 q'=源下一状态、h'=源下一位置、n'=n+1。因此 **D(step_A(X))=step_M(D(X))**。
+In every branch q'=the source next state, h'=the source next position, and n'=n+1. Therefore **D(step_A(X))=step_M(D(X))**.
 
-反方向亦成立：A 只有查到源转换才可更新，且只应用该规则；不存在目标额外计算步被误当成源转换的情况。这里“一步 A”是解释宏步骤，不声称其底层耗时等于一个图灵机原子步骤。
+The converse also holds: A can update only after finding a source transition, and applies only this rule; there is no extra target computation step that could be mistaken for a source transition. “One step of A” here means an interpreter macro-step; it does not claim that its underlying runtime equals one atomic Turing-machine step.
 
-## 7. 有限前缀归纳与停止/发散
+## 7. Finite-Prefix Induction and Termination/Divergence
 
-由初始引理及一步引理，对每个自然数 n，只要源执行了 n 步，目标可执行 n 个宏步骤且 D(Xn)=Cn。反向模拟排除伪造的额外后继。
+By the initial lemma and one-step lemma, for every natural number n, if the source executes n steps then the target can execute n macro-steps and D(Xn)=Cn. The reverse simulation rules out spurious additional successors.
 
-源在第 n 步进入 H，则目标状态也进入 H，二者 HALTED；源在第 n 步无转换，则目标查表也失败，二者 STUCK。观察所得状态、头和非 blank 输出带完全相等。
+If the source enters H at step n, the target state also enters H, and both are HALTED. If the source has no transition at step n, target lookup also fails, and both are STUCK. The observed state, head, and nonblank output tape are exactly equal.
 
-源无限运行，则每个有限前缀都可由目标模拟；每次查表和栈操作本身有限，且抽象模型没有总预算上限，因此目标不会在某个前缀凭空停止。反之，目标无限宏步骤给出源无限步骤。此论证**不提供决定任意 M 是否会停机的算法**。
+If the source runs forever, the target can simulate every finite prefix; each lookup and stack operation is itself finite, and the abstract model has no total budget limit, so the target cannot stop spontaneously at any prefix. Conversely, infinitely many target macro-steps yield infinitely many source steps. This argument **does not provide an algorithm to decide whether arbitrary M halts**.
 
-## 8. 解释器没有隐藏的超图灵操作
+## 8. The Interpreter Has No Hidden Hypercomputational Operation
 
-为排除“用通用能力证明通用能力”的循环论证，可将 A 存储表示为固定字母表上的有限字串：程序表、当前编号、左栈编号序列、当前符号、右栈序列及分隔符。
+To rule out circularly proving universality by “using universal capability,” A's storage representation can be a finite string over a fixed alphabet: the program table, current index, left-stack symbol-index sequence, current symbol, right-stack sequence, and separators.
 
-所需有限程序只有以下机械操作：
+The required finite program consists only of these mechanical operations:
 
-1. 扫描至分隔符定位字段；依次复制/比较 unary 编码，两串同时到 0 则相等，否则不等；
-2. 顺序查表，遇到匹配记录复制其输出字段；每次扫描的表有限；
-3. push 把有限编码写入栈区末尾；pop 向后扫描到上一个分隔符并取出末项；空栈测试只检查相邻分隔符；
-4. 若连续存储区需扩展，从最右端往左移动有限后缀，再插入新字段；删除同理左移；
-5. 控制流只依赖有限字符、匹配成功/失败标记、L/R/S 和有限过程状态；临时标记可从固定扩展字母表选择。
+1. Scan to a separator to locate a field; copy/compare unary encodings in order, with equality iff both strings reach 0 together, otherwise unequal;
+2. Search the table sequentially, copying its output fields when a matching record is found; every scan is over a finite table;
+3. Push by writing a finite encoding at the end of the stack region; pop by scanning backward to the preceding separator and extracting the last item; test an empty stack by checking adjacent separators;
+4. If the contiguous storage region must grow, move the finite suffix from right to left, then insert the new field; deletion works by shifting left similarly;
+5. Control flow depends only on finite characters, match success/failure flags, L/R/S, and finite procedure state; temporary markers can be selected from a fixed extended alphabet.
 
-这些扫描/标记/搬移都有固定有限控制，并在任何有限操作数上结束；无需实数 oracle、不可计算函数或任意函数调用。故 A 可实现为通常的单带图灵机（只是可能很慢）。结合第 7 节，A 至少模拟全部源图灵机且没有超出图灵可计算能力，因此抽象模型图灵完备。
+All these scans, marking operations, and moves have fixed finite control and terminate for every finite operand; no real-number oracle, uncomputable function, or arbitrary function call is needed. Thus A can be implemented as an ordinary single-tape Turing machine (though it may be very slow). Together with Section 7, A simulates at least all source Turing machines and does not exceed Turing-computable power; therefore the abstract model is Turing-complete.
 
-## 9. 资源预算与恢复：实现的是前缀，不是反例
+## 9. Resource Budgets and Resumption: The Implementation Does Prefixes, Not Counterexamples
 
-实际 `run` 有步数和存储配额。若完成 k 步后 PAUSED，返回的配置应为 Xk；下次从同一机器描述恢复，按第 6 节继续，分片执行与一次执行同样数量步骤等价。checkpoint 哈希检查数据是否变动，**不是签名，也不证明状态可达**。
+The actual `run` has step and storage quotas. If it returns PAUSED after completing k steps, the returned configuration should be Xk; resuming from the same machine description continues as in Section 6, and segmented execution is equivalent to one run for the same total number of steps. The checkpoint hash checks whether data changed; it is **not a signature and does not prove the state is reachable**.
 
-RESOURCE_LIMIT 在将要越界的转换提交前返回原配置；STOPPED 不执行新转换。HALTED/STUCK 标签不与预算耗尽混淆。内存上限即使跨多次 resume 仍然存在，不能因为允许恢复就宣称实际程序无界。
+RESOURCE_LIMIT returns the original configuration before committing a transition that would exceed the limit; STOPPED executes no new transition. HALTED/STUCK labels are not conflated with budget exhaustion. The memory limit remains in effect across multiple resumes; allowing resumption does not justify claiming that the actual program is unbounded.
 
-对任意给定的有限源执行前缀，其使用的带区间与步数有限；在资源充足的抽象实现族中可以完成该前缀。当前硬上限内的具体部署只覆盖其中一部分。该“对每个前缀存在足够资源”的量词，不等于“存在一台有固定资源的机器能跑完所有前缀”。
+For any given finite source execution prefix, the tape interval and number of steps it uses are finite; the prefix can be completed in an abstract implementation with sufficient resources. The current deployment's hard limits cover only a subset. The quantifier “for every prefix there exist sufficient resources” is not equivalent to “there exists a machine with fixed resources that can run all prefixes.”
 
-## 10. 证明义务状态
+## 10. Proof Obligation Status
 
-|义务|本文件依据|等级|
+|Obligation|Basis in this document|Level|
 |---|---|---|
-|任意有限 M,w 可编码，解释器固定|第2节|构造性论证|
-|配置表示覆盖全部有限支撑配置|第3节|构造性论证|
-|初始状态保持|第5节|数学证明|
-|L/R/S 一步双向模拟|第6节|分情况数学证明|
-|所有有限前缀与停止/发散对应|第7节|归纳与延伸论证|
-|基础操作有效、无隐藏oracle|第8节|固定字母表实现构造|
-|Python实现完全refine抽象语义|差分测试与源码审查|有限实证，不是形式证明|
-|证明助手内核认证|formal/Simulation.lean的9个定理；相对位置源带与有限列表目标带|Lean4.35.0通过；标准依赖propext、Quot.sound；无sorryAx；不含完整U与Python refinement|
-|原AutoForge自主生成任意系统|不属于U|未实现、未验证|
+|Any finite M,w can be encoded; interpreter is fixed|Section 2|Constructive argument|
+|Configuration representation covers all finite-support configurations|Section 3|Constructive argument|
+|Initial-state preservation|Section 5|Mathematical proof|
+|L/R/S one-step simulation in both directions|Section 6|Case-based mathematical proof|
+|Correspondence of all finite prefixes and termination/divergence|Section 7|Induction and extension argument|
+|Basic operations are valid, with no hidden oracle|Section 8|Fixed-alphabet implementation construction|
+|Python implementation fully refines abstract semantics|Differential tests and source review|Finite empirical evidence, not formal proof|
+|Proof-assistant kernel certification|9 theorems in formal/Simulation.lean; relative-position source tape and finite-list target tape|Lean 4.35.0 passed; depends on propext, Quot.sound; no sorryAx; does not include complete U or Python refinement|
+|Original AutoForge autonomously generates arbitrary systems|Outside the scope of U|Not implemented, not verified|
 
-## 来源
+## Sources
 
-- Stanford Encyclopedia of Philosophy, *Turing Machines*, 2025-05-21修订：https://plato.stanford.edu/entries/turing-machine/ 。第1节给出有限控制、双向无限带及无限时间/存储假设，第2节讨论通用机。用于确定源模型与理论/实践边界，不作为本项目代码已验证的证明。
-- 本地实现契约：`CONTRACT.md`；本地一致性证据由 `verify.py` 产生。证明不依赖随机测试通过与否。
+- Stanford Encyclopedia of Philosophy, *Turing Machines*, revised 2025-05-21: https://plato.stanford.edu/entries/turing-machine/ . Section 1 gives the assumptions of finite control, a two-way infinite tape, and unbounded time/storage; Section 2 discusses universal machines. Used to establish the source model and theory/practice boundary, not as proof that this project's code has been verified.
+- Local implementation contract: `CONTRACT.md`; local consistency evidence is produced by `verify.py`. The proof does not depend on whether randomized tests pass.

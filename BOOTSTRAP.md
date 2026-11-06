@@ -1,109 +1,109 @@
-# 多维度自举与扩展验证
+# Multidimensional Bootstrap and Extensibility Validation
 
-## 结论的判定口径
+## Criteria for Interpreting the Conclusions
 
-本报告区分三个对象，避免把测试通过混成图灵完备证明：
+This report distinguishes three objects to avoid conflating passing tests with a proof of Turing-completeness:
 
-1. **运行语言**：WebAssembly 有条件分支、循环、递归调用、内存读写与间接调用。实际可用指令仍受当前 wasmi 支持范围限制，不以最新版规范替代本机实测。
-2. **当前部署**：每次执行只有 100,000 fuel、128 KiB 线性内存上限、两个 i64 输入和一个 i64 输出。任何运行都被预算截断；输入空间、可用状态和运行步数有界，因此不能按无界计算模型宣称严格图灵完备。移除 fuel 也不会自动解决有限内存与接口约束。
-3. **自主提案器**：默认是有限表达式搜索，不会自动发明循环算法、扩展语法、重编译自身或改写验收核心。12 轮是候选系统的连续演化，不是编译器自托管或递归自我改进。
+1. **Execution language**: WebAssembly has conditional branches, loops, recursive calls, memory reads and writes, and indirect calls. The instructions actually available remain subject to the current wasmi support range; the latest specification is not substituted for local measurements.
+2. **Current deployment**: Each execution has only 100,000 fuel, a 128 KiB linear-memory limit, two i64 inputs, and one i64 output. Every run is truncated by a budget; the input space, available state, and number of execution steps are bounded, so strict Turing-completeness cannot be claimed under an unbounded computation model. Removing fuel would not automatically resolve the finite-memory and interface constraints either.
+3. **Autonomous proposer**: By default this is a finite expression search; it does not automatically invent loop algorithms, extend its syntax, recompile itself, or rewrite the acceptance core. The 12 rounds are continuous evolution of the candidate system, not compiler self-hosting or recursive self-improvement.
 
-有限测试不能证明任意程序、任意新目标或未来扩展正确。我们验证可观察行为和失败边界，不作无界证明或长期稳定性保证。
+Finite tests cannot prove correctness for arbitrary programs, arbitrary new targets, or future extensions. We verify observable behavior and failure boundaries; we make no unbounded proof or long-term stability guarantee.
 
-参考：WebAssembly 官方执行语义 https://webassembly.github.io/spec/core/exec/instructions.html ，其中 loop、if、br、call 等有独立规则。本项目本地限制以 `src/sandbox.rs`、`src/main.rs` 为准。
+Reference: the official WebAssembly execution semantics at https://webassembly.github.io/spec/core/exec/instructions.html, where loop, if, br, call, and others have independent rules. For local project limits, see `src/sandbox.rs` and `src/main.rs`.
 
-## 测试组成
+## Test Composition
 
-### A. 连续目标演化
+### A. Continuous Target Evolution
 
-`python bootstrap.py` 在独立 `bootstrap-runs/` 目录生成状态、任务、命令日志及报告，不修改已有 `state/`。
+`python bootstrap.py` generates state, tasks, command logs, and reports in an independent `bootstrap-runs/` directory; it does not modify the existing `state/`.
 
-每轮必须满足：
+Each round must satisfy:
 
-- 使用实际 Rust 可执行文件、Python 与 Julia 进程，不伪造提案或签名证据。
-- 至少 12 个公开样例与 12 个保留样例，种子固定；适用时覆盖 i64 极值与回绕。
-- 两线同轮通过，前一版本指针可追踪；不同目标时旧候选失败后修订。
-- 执行未包含在契约中的新输入，比较独立参考结果。
-- 重放历史版本，保留失败日志；单次候选搜索轮数与目标演化轮数分别报告。
+- Use actual Rust executables and Python and Julia processes; do not fabricate proposer or signature evidence.
+- Have at least 12 public samples and 12 held-out samples, with fixed seeds; cover i64 extremes and wraparound where applicable.
+- Both lanes pass in the same round, and the previous-version pointer is traceable; for different targets, revise the old candidate after it fails.
+- Execute new inputs not included in the contract and compare against an independent reference result.
+- Replay historical versions and retain failure logs; report candidate-search rounds separately from target-evolution rounds.
 
-额外负向场景验证回归否决、隐藏样例否决、矛盾规范拒绝、不支持的 XOR 目标拒绝、回滚、停止恢复及篡改检测。
+Additional negative scenarios validate regression vetoes, held-out-sample vetoes, rejection of contradictory specifications, rejection of unsupported XOR targets, rollback, stop/resume, and tamper detection.
 
-### B. 超出当前提案语法的执行能力
+### B. Execution Capabilities Beyond the Current Proposer Syntax
 
-`cargo test --locked` 的 `tests/computation.rs` 直接使用真实 sandbox 编译和运行手写 WAT：
+`cargo test --locked` in `tests/computation.rs` directly uses the real sandbox to compile and run hand-written WAT:
 
-- Euclid GCD：循环、条件跳转、取余。
-- 递归阶乘：基线条件、调用栈、返回值组合。
-- 内存读写及跨调用状态隔离。
-- 函数表与间接调用。
-- 小型字节码解释器：取指、译码、状态更新、条件回跳、停机。
-- 函数组合、64 位回绕与陷阱。
-- 除零、越界、扩容超限、ABI 不匹配。
+- Euclid GCD: loops, conditional branches, remainder.
+- Recursive factorial: base condition, call stack, return-value composition.
+- Memory reads and writes and state isolation across calls.
+- Function tables and indirect calls.
+- Small bytecode interpreter: fetch, decode, state update, conditional backward branch, halt.
+- Function composition, 64-bit wraparound, and traps.
+- Division by zero, out-of-bounds access, growth limit exceeded, ABI mismatch.
 
-这些程序是验证者编写的计算见证，不计作自主生成能力，也不构成通用图灵机模拟证明。
+These programs are computational witnesses written by the verifier. They do not count as autonomous generation capability and do not constitute proof of universal Turing-machine simulation.
 
-### C. 不重新编译控制器的扩展实验
+### C. Extension Experiment Without Recompiling the Controller
 
-`python extension_test.py` 使用现有 `AUTOFORGE_PROJECT` 协议切换到独立测试目录中的提案器：
+`python extension_test.py` uses the existing `AUTOFORGE_PROJECT` protocol to switch to a proposer in a separate test directory:
 
-- Python 与 Julia 独立实现位运算候选搜索；原提案器不能表达的 XOR，在扩展后能晋级并正确执行。
-- 控制器二进制 SHA-256 必须保持相同；新提案器哈希必须进入签名 provenance。
-- 接入后重新编译构件、重放验收。
-- 缺失提案器与不匹配 ABI 必须拒绝，不能退化为单线发布。
+- Independent Python and Julia implementations search for bitwise-operation candidates; after extension, XOR—which the original proposer cannot express—can be promoted and executed correctly.
+- The controller binary SHA-256 must remain the same; the new proposer hash must be included in signed provenance.
+- Recompile the connected artifact and replay acceptance.
+- A missing proposer and an ABI mismatch must be rejected; they must not degrade to single-lane release.
 
-扩展提案器由操作者编写和安装，并非原型自行创造。实验只证明**同一个 i64 ABI 内提案策略可替换**；不证明可以直接接入 HTTP、数据库、持久状态、多模态或任意语言构建器。
+The extension proposer is written and installed by an operator; the prototype does not create it itself. The experiment proves only that **the proposer strategy can be replaced within the same i64 ABI**; it does not prove that HTTP, databases, persistent state, multimodal inputs, or arbitrary language builders can be connected directly.
 
-## 扩展性门槛
+## Extensibility Thresholds
 
-|维度|当前可核验边界|尚不能保证|
+|Dimension|Currently verifiable boundary|Not yet guaranteed|
 |---|---|---|
-|提案策略替换|同 stdin/stdout 协议、双线独立提案、哈希绑定|自动发现/安装任意插件|
-|计算表达|WASM 分支、循环、递归、内存、解释器|无界存储和无界运行|
-|目标演化|固定 ABI 的多目标连续迭代|任意自然语言目标自动形式化|
-|领域输入输出|两个 i64 输入，一个 i64 输出|变长文档、流式输入、持久状态|
-|验收|样例、保留集、历史回归、重放|规范完备性和未来全输入正确|
-|安全|生成 WASM 无 imports、有资源预算|宿主进程隔离、硬件停止、管理员篡改防护|
-|自主范围|候选数据面修订|控制面、编译器、验收器自改并自批准|
+|Proposer strategy replacement|Same stdin/stdout protocol, independent two-lane proposals, hash binding|Automatic discovery/installation of arbitrary plugins|
+|Computational expression|WASM branches, loops, recursion, memory, interpreter|Unbounded storage and unbounded execution|
+|Target evolution|Continuous iteration across multiple targets with a fixed ABI|Automatic formalization of arbitrary natural-language targets|
+|Domain input/output|Two i64 inputs, one i64 output|Variable-length documents, streaming input, persistent state|
+|Acceptance|Samples, held-out set, historical regression, replay|Specification completeness and correctness for all future inputs|
+|Security|Generated WASM has no imports and has resource budgets|Host-process isolation, hardware stop, protection against administrator tampering|
+|Autonomous scope|Revision of candidate data plane|Self-modification and self-approval of the control plane, compiler, and acceptance system|
 
-扩大能力时须增加明确版本的领域契约、隔离执行器、独立 oracle、数据迁移与回滚，不能为了“图灵完备”移除现有资源和终止限制。
+When expanding capabilities, add an explicitly versioned domain contract, isolated executor, independent oracle, data migration, and rollback. Do not remove existing resource and termination limits for the sake of “Turing-completeness.”
 
-## 发现与修复
+## Findings and Fixes
 
-12 轮套件首次运行停在加法目标：Python 通过、Julia 拒绝，旧版本未被替换。保留证据：`bootstrap-runs/20261030-115711-084e6e9e/report.json` 及对应 ledger。
+The first run of the 12-round suite stopped at the addition target: Python passed, Julia rejected, and the old version was not replaced. Retained evidence: `bootstrap-runs/20261030-115711-084e6e9e/report.json` and the corresponding ledger.
 
-直接诊断证明当前 JSON3 1.14.4 / Parsers 2.8.10 / Julia 1.13.3 组合将 `-9223372036854775807` 解码为 `9223372036854775807`；普通泛型解析与显式 Int64 结构解析均受影响。不能据此断言所有版本都存在此缺陷。
+Direct diagnosis showed that the current JSON3 1.14.4 / Parsers 2.8.10 / Julia 1.13.3 combination decodes `-9223372036854775807` as `9223372036854775807`; both ordinary generic parsing and explicit Int64 structure parsing are affected. This does not establish that all versions have this defect.
 
-修复采用 JSON3 的 RawType 钩子保留原始 token，以 Julia `parse(Int64, token)` 做严格十进制转换；不改依赖源码、不特判某一个数、不删除边界用例。所有用例输入、期望值、公开反馈与协议整数字段使用精确解码；溢出、小数、科学计数及字符串数字拒绝。新增 `tests/protocol.jl` 回归用例。
+The fix uses JSON3's RawType hook to preserve the original token, then performs strict decimal conversion with Julia `parse(Int64, token)`; it does not modify dependency source, special-case a particular number, or remove boundary cases. Inputs, expected values, public feedback, and protocol integer fields in all cases use exact decoding; overflow, decimals, scientific notation, and numeric strings are rejected. Added regression cases in `tests/protocol.jl`.
 
-测试代码自身也修正了错误假设：缺失提案文件会在 provenance 前置检查返回错误，而不是进入 HOLD；除零验收检查运行陷阱与合法除法的对照，不绑定第三方错误文案。失败报告保留，不计入完成轮数。
+The test code's own incorrect assumption was also corrected: a missing proposer file returns an error during the provenance precheck rather than entering HOLD; the division-by-zero acceptance check examines the runtime trap and a valid-division comparison, without binding to third-party error wording. Failure reports are retained and are not counted among completed rounds.
 
-## 实测结果（2026-10-30）
+## Measured Results (2026-10-30)
 
-主报告：`bootstrap-runs/20261030-120505-144b067b/report.json`。总耗时 57.235 秒，包含 12 轮目标演化及附加负向场景；不是长时间稳定性基准。每个目标 26 个公开＋24 个保留样例，另执行 5 个不在契约中的新输入。合计 600 个契约样例、60 个新输入探针；双线和重放会重复执行，不能把重复次数当成独立样本。
+Main report: `bootstrap-runs/20261030-120505-144b067b/report.json`. Total elapsed time was 57.235 seconds, including 12 rounds of target evolution and additional negative scenarios; this is not a long-duration stability benchmark. Each target had 26 public + 24 held-out samples and additionally ran 5 new inputs not in the contract. In total there were 600 contract samples and 60 new-input probes; the two lanes and replay execute cases repeatedly, so repetitions must not be counted as independent samples.
 
-|轮次|目标|双线提案轮数|结果|
+|Round|Target|Two-lane proposal rounds|Result|
 |---|---|---:|---|
-|1|回绕加法|1|PROMOTE|
-|2|回绕减法|2|PROMOTE|
-|3|反向减法|2|PROMOTE|
-|4|回绕乘法|2|PROMOTE|
-|5|有符号最小值|2|PROMOTE|
-|6|有符号最大值|2|PROMOTE|
-|7|回绕差的绝对值|2|PROMOTE|
+|1|Wrapping addition|1|PROMOTE|
+|2|Wrapping subtraction|2|PROMOTE|
+|3|Reverse subtraction|2|PROMOTE|
+|4|Wrapping multiplication|2|PROMOTE|
+|5|Signed minimum|2|PROMOTE|
+|6|Signed maximum|2|PROMOTE|
+|7|Absolute value of wrapped difference|2|PROMOTE|
 |8|3x−2y+7|2|PROMOTE|
 |9|−4x+5y−9|2|PROMOTE|
-|10|常量 −17|2|PROMOTE|
-|11|x 限幅 [−7,11]|2|PROMOTE|
-|12|y 限幅 [−13,4]|2|PROMOTE|
+|10|Constant −17|2|PROMOTE|
+|11|Clamp x to [−7,11]|2|PROMOTE|
+|12|Clamp y to [−13,4]|2|PROMOTE|
 
-累计 23 次双线提案轮次，即 46 次独立提案器调用。第 2–12 轮两线均先拒绝旧候选，再修订通过；该行为由离线提案器的首轮保留基线策略触发，不表示它自行发现了更高层的需求。
+There were 23 cumulative two-lane proposal rounds, or 46 independent proposer invocations. In rounds 2–12 both lanes first rejected the old candidate, then revised and passed; this behavior was triggered by the offline proposer's first-round retained-baseline strategy and does not mean it independently discovered a higher-level requirement.
 
-附加场景：同 ID 历史回归与隐藏集错误均 HOLD；矛盾目标 REJECT；原语法不支持 XOR，正确 HOLD；两次回滚后的实际输出正确；kill/resume、构件篡改拒绝与恢复通过；最终 12 个版本签名及行为重放通过。
+Additional scenarios: same-ID historical regression and held-out-set errors both resulted in HOLD; contradictory targets were REJECTed; XOR unsupported by the original syntax correctly resulted in HOLD; actual outputs after two rollbacks were correct; kill/resume, rejection of artifact tampering and recovery passed; replay of the final 12 signed versions passed.
 
-扩展报告：`bootstrap-runs/extension-55276ae7dfb0/report.json`，6 项通过；实际 XOR 泛化输出正确，控制器二进制未因接入扩展而变化。
+Extension report: `bootstrap-runs/extension-55276ae7dfb0/report.json`, 6 checks passed; the actual XOR generalization output was correct, and the controller binary did not change as a result of connecting the extension.
 
-Julia 协议：`tests/protocol.jl` 40/40 断言通过。Rust：23 次测试执行通过，其中 6 个旧 sandbox 测试在 integration 模块再次执行，因此是 **17 项不同测试（6 个原有＋11 个新增）**，不是 23 项独立验证。
+Julia protocol: all 40/40 assertions in `tests/protocol.jl` passed. Rust: 23 test executions passed, of which 6 old sandbox tests were executed again in the integration module. Thus there were **17 distinct tests (6 existing + 11 new)**, not 23 independent validations.
 
-**判定：受限多目标演化通过；同 ABI 提案策略扩展通过；通用控制流执行能力得到见证。严格无界图灵完备性不成立，任意系统生成与自主语法扩展未实现，未来高扩展性只能在已测接口范围内确认。**
+**Conclusion: constrained multi-target evolution passed; same-ABI proposer-strategy extension passed; general control-flow execution capability is witnessed. Strict unbounded Turing-completeness does not hold; arbitrary system generation and autonomous syntax extension are not implemented; future high extensibility is confirmed only within the tested interfaces.**
 
-修复后的原 `acceptance.py` 15项场景全部复验通过（28.78秒）；旧演示 `state/` 的两个历史版本重放通过。测试仅创建独立状态，未升级或覆盖演示版本。
+All 15 scenarios in the repaired original `acceptance.py` passed re-verification (28.78 seconds); replay of the two historical versions in the old demo `state/` passed. Tests created only independent state and did not upgrade or overwrite the demo versions.
