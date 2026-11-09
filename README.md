@@ -24,7 +24,7 @@ Configure an OpenAI-compatible model with `AUTOFORGE_API_BASE`, `AUTOFORGE_MODEL
 
 ## Download
 
-The [latest public release](https://github.com/Brian98Z/AutoForgeRobot/releases/latest) remains the historical `v0.1.0` Windows x64 controller (self-signed, SHA-256 in `SHA256SUMS.txt`). The November 9 fixes below are available in source; the updated local EXE has **not** been published as a GitHub Release. The old downloadable binary does not automatically acquire these fixes. Source archives attached by GitHub are not installers.
+Windows x64 feedback update: [latest release](https://github.com/Brian98Z/AutoForgeRobot/releases/latest), `v0.1.0-feedback-20261109`. Download `autoforge-0.1.0-feedback-20261109-windows-x64.exe` and verify it against `SHA256SUMS.txt`. This updated executable is **unsigned**; the old self-signed certificate does not sign it. Historical `v0.1.0` remains available separately. Source archives attached by GitHub are not installers.
 
 ## Repository Layout
 
