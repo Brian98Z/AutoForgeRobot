@@ -8,14 +8,16 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 import hashlib, http.server, json, socket, tempfile, threading
 from pathlib import Path
 import application_browser as browser
-
 HTML='''<!doctype html><html><body><main><h1>Fixture ready</h1><div id="text-only">unexpected item</div><div id="truly-empty" style="min-height:20px"></div><form><label for="task">Task</label><input id="task"><label><input id="choice" type="checkbox">Accept</label><button id="save" type="button">Save</button></form><p role="status" id="status">Empty</p><ul id="items"></ul><script>document.getElementById('choice').addEventListener('change',e=>{document.getElementById('status').textContent=e.target.checked?'Checked':'Unchecked';});document.getElementById('task').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('save').click();}});document.getElementById('save').onclick=()=>{const v=document.getElementById('task').value;document.getElementById('items').innerHTML=v?'<li>'+v+'</li>':'';document.getElementById('status').textContent=v?'Saved':'Required';};</script></main></body></html>'''
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path=='/broken':
+            body=b'<!doctype html><h1>Fixture ready</h1><script src="/app.js"></script>'
+            self.send_response(200); self.send_header('Content-Type','text/html'); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body); return
+        if self.path=='/app.js': self.send_error(401); return
         if self.path not in ('/','/index.html'): self.send_error(404); return
         b=HTML.encode(); self.send_response(200); self.send_header('Content-Type','text/html; charset=utf-8'); self.send_header('Content-Length',str(len(b))); self.end_headers(); self.wfile.write(b)
     def log_message(self,*args): pass
-
 def main():
     checks=['loopback origin and typed contract validation']
     contract={'schema':1,'start_path':'/','steps':[{'action':'assert_text','selector':'h1','text':'Fixture ready'},{'action':'assert_label','name':'Task'},{'action':'check','selector':'#choice','value':True},{'action':'assert_status','role':'status','text':'Checked'},{'action':'check','selector':'#choice','value':False},{'action':'assert_status','role':'status','text':'Unchecked'},{'action':'focus','selector':'#task'},{'action':'assert_focused','selector':'#task'},{'action':'fill','selector':'#task','value':'Persisted task'},{'action':'press','selector':'#task','value':'Enter'},{'action':'assert_status','role':'status','text':'Saved'},{'action':'assert_list','selector':'#items','count':1},{'action':'reload'},{'action':'assert_form','selector':'#task','value':''},{'action':'screenshot','name':'fixture'}]}
@@ -65,7 +67,13 @@ def main():
             try: browser.run(origin,digest,att,bad_semantics,Path(d)/'bad-label',authorized=True)
             except browser.BrowserRefused: pass
             else: raise AssertionError('browser accepted missing accessible label')
+            broken={'schema':1,'start_path':'/broken','steps':[{'action':'assert_text','selector':'h1','text':'Fixture ready'}]}
+            try: browser.run(origin,digest,att,broken,Path(d)/'broken-script',authorized=True)
+            except browser.BrowserRefused as exc:
+                assert 'resource_http' in str(exc) and '401' in str(exc) and '/app.js' in str(exc)
+            else: raise AssertionError('visible root page hid inaccessible login script')
         checks.append('text-only nonempty rejected and visible empty element accepted by real browser')
+        checks.append('visible root with app.js HTTP 401 rejected as required-resource failure')
         checks.append('real headless Playwright navigation, declarative interaction, reload and screenshot hash against authored static fixture')
     finally: server.shutdown(); server.server_close(); worker.join(timeout=2)
     print(json.dumps({'schema':1,'host_logic':'PASS','browser':'PASS','checks':checks},ensure_ascii=False)); return 0

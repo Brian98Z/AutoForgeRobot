@@ -8,11 +8,9 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 import argparse, json, sys, tempfile
 from pathlib import Path
 import application_builder, applications, references, reference_reconstruction
-
 ROOT=Path(__file__).resolve().parents[1]
+MODULES=ROOT/"autoforge"
 FIXTURE=ROOT/"fixtures"/"stateful_reference"
-
-
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--store",required=True)
@@ -44,7 +42,7 @@ def main(argv=None):
         stage=applications.stage_candidate(wrong,root/"candidate")
         manifest=applications._read_json(Path(stage["manifest"]),application_builder.MAX_INPUT)
         envelope={"schema":1,"workspace_manifest":manifest,"candidate_sha256":stage["candidate_sha256"]}
-        argv=[sys.executable,str(ROOT / "autoforge" / "stateful_reconstruction_adapter.py"),"--store",str(Path(args.store).resolve()),
+        argv=[sys.executable,str(MODULES/"stateful_reconstruction_adapter.py"),"--store",str(Path(args.store).resolve()),
               "--package-id",pkg["package_id"],"--contract",str(contract_path),"--engine",args.engine,
               "--image",args.image,"--node-image",args.node_image]
         payload=applications._run_json_command(argv,envelope)
@@ -76,7 +74,5 @@ def main(argv=None):
                           "build_pass":payload["build_pass"],"test_pass":payload["test_pass"],
                           "scenario_observations":payload["observations"]},ensure_ascii=False,indent=2))
     return 0
-
-
 if __name__=="__main__":
     raise SystemExit(main())

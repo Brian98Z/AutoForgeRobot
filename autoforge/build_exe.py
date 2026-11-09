@@ -47,7 +47,7 @@ def build() -> int:
         "--add-data", f"{manifest};.",
         "--paths", str(ROOT / "autoforge"),
     ]
-    for excluded in ("numpy", "tkinter", "distutils", "setuptools", "pip", "matplotlib"):
+    for excluded in ("numpy", "tkinter", "distutils", "setuptools", "pip", "matplotlib", "playwright"):
         argv += ["--exclude-module", excluded]
     for source in sorted((ROOT / "autoforge").glob("*.py")):
         argv += ["--add-data", f"{source};."]

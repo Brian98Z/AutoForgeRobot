@@ -13,27 +13,20 @@ import subprocess
 import sys
 import urllib.request
 import uuid
-
 import agent_runtime
 import agent_tools
-
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_PROFILES = {
     "quality": ("http://127.0.0.1:8081/v1", r"H:\ComfyUI_Mie_2026_V8.0\ComfyUI\models\LLM\Qwen3.6-35B-A3B\Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ4_NL.gguf"),
     "speed": ("http://127.0.0.1:8084/v1", r"H:\ComfyUI_Mie_2026_V8.0\ComfyUI\models\text_encoders\Qwen\Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf"),
 }
+MODULES = ROOT / "autoforge"
 FIXTURE = ROOT / "fixtures" / "business"
 MAX_SECONDS = 480
 MAX_CALLS = 16
 OUTPUT_TOKENS = 4096
-
-
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-
-
 def _events(path: Path) -> list[dict]:
     rows = []
     if path.exists():
@@ -42,8 +35,6 @@ def _events(path: Path) -> list[dict]:
                 if line.strip():
                     rows.append(json.loads(line))
     return rows
-
-
 def _public_event(value):
     """Copy events while excluding capability material if future event schemas add it."""
     if isinstance(value, dict):
@@ -52,8 +43,6 @@ def _public_event(value):
     if isinstance(value, list):
         return [_public_event(item) for item in value]
     return value
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True, help="exact locally present sha256 image ID")
@@ -115,8 +104,8 @@ def main() -> int:
         report["digests"] = {
             "request_sha256": hashlib.sha256(request_bytes).hexdigest(), "contract_sha256": contract_digest,
             "image_argument_sha256": hashlib.sha256(args.image.encode("utf-8")).hexdigest(),
-            "sources": {name: _digest(ROOT / name) for name in
-                        ("agent_business_check.py", "application_build.py", "application_builder.py", "application_proposer.py", "agent_runtime.py",
+            "sources": {name: _digest(MODULES / name) for name in
+                        ("application_build.py", "application_builder.py", "application_proposer.py", "agent_runtime.py",
                          "agent_transport.py", "agent_tools.py", "agent_session.py", "agent_budget.py", "applications.py", "application_checkpoint.py")},
             "tool_schema_sha256": hashlib.sha256(json.dumps(agent_runtime.TOOLS, ensure_ascii=False, sort_keys=True,
                                                                separators=(",", ":")).encode("utf-8")).hexdigest(),
@@ -124,7 +113,7 @@ def main() -> int:
                                                                         separators=(",", ":")).encode("utf-8")).hexdigest()}
         references = run_root / "empty-reference-store"
         references.mkdir()
-        command = [sys.executable, str(ROOT / "autoforge" / "application_build.py"), "run", "--request", str(request_copy),
+        command = [sys.executable, str(MODULES / "application_build.py"), "run", "--request", str(request_copy),
                    "--contract", str(contract_path), "--reference-store", str(references), "--engine", args.engine,
                    "--image", args.image, "--output", str(output), "--mode", "agent", "--max-turns", str(args.max_turns),
                    "--token-budget", str(args.token_budget), "--time-budget", str(MAX_SECONDS), "--tool-budget", "64",
@@ -207,8 +196,6 @@ def main() -> int:
     print(json.dumps({"run_dir": str(run_root), "session_dir": str(output), "status": report["status"],
                       "report": str(report_path)}, ensure_ascii=False))
     return 0 if report["status"] == "PASS" else 2
-
-
 def _revision_manifest(output: Path, events: list[dict]) -> dict:
     """Link immutable validation revisions to candidate digests and their journal positions."""
     from agent_session import load
@@ -255,7 +242,5 @@ def _revision_manifest(output: Path, events: list[dict]) -> dict:
     return {"schema": 1, "journal_sha256": _digest(output / "events.jsonl") if (output / "events.jsonl").is_file() else None,
             "revisions": revisions, "tool_events": tool_events, "event_count": len(events),
             "final_candidate_sha256": hashlib.sha256(applications._json_bytes(state["candidate"])).hexdigest()}
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

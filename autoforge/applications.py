@@ -155,6 +155,12 @@ def stage_candidate(candidate: Any, output: Path) -> dict[str, Any]:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
         (temp / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8", newline="\n")
+        # Candidate source is a public runtime input, never a secret store. mkdtemp
+        # starts at 0700; publish explicit read/traverse modes independent of umask
+        # so the container's UID 65534 can read the identical hashed revision.
+        for node in temp.rglob("*"):
+            node.chmod(0o755 if node.is_dir() else 0o644)
+        temp.chmod(0o755)
         if destination.exists() or destination.is_symlink():
             raise Refused(f"output directory appeared during staging: {destination}")
         temp.rename(destination)

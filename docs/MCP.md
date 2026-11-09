@@ -42,9 +42,14 @@ Unknown keys are refused so a typo cannot silently change behavior.
 ## CLI
 
 ```bash
-python agent_mcp.py list --config mcp.json
-python agent_mcp.py call --config mcp.json --tool mcp__files__read --arguments '{"path":"README.md"}'
+python autoforge/agent_mcp.py list --config mcp.json
+python autoforge/agent_mcp.py call --config mcp.json --tool mcp__files__read --arguments '{"path":"README.md"}'
 ```
+
+The rebuilt Windows controller exposes the same client as `dist/autoforge.exe agent_mcp --help`
+and `dist/autoforge.exe agent_mcp list --config mcp.json`. This is an outbound MCP client,
+not an MCP server for attaching AutoForge to another assistant. It does not replace the
+required `AUTOFORGE_API_BASE`, `AUTOFORGE_MODEL`, or provider credentials.
 
 `list` prints every discovered tool with its `inputSchema`. Tool names are namespaced as
 `mcp__<server>__<tool>`, so a server cannot shadow a built-in agent tool.
@@ -84,7 +89,7 @@ those invariants.
 ## Verification
 
 ```bash
-python agent_mcp_check.py
+python checks/agent_mcp_check.py
 ```
 
 The check runs a loopback fake server and asserts: namespaced discovery, a real `tools/call`

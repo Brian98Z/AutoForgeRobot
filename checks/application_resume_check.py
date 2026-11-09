@@ -10,9 +10,8 @@ import subprocess
 import sys
 import tempfile
 import time
-
 ROOT=Path(__file__).resolve().parents[1]
-
+MODULES=ROOT/'autoforge'
 def main():
     with tempfile.TemporaryDirectory(prefix='autoforge-resume-') as temp:
         root=Path(temp); req=root/'request.json'; req.write_text(json.dumps({'schema':1,'goal':'repair syntax','references':[]}),encoding='utf-8')
@@ -31,7 +30,7 @@ except SyntaxError: issues=['SyntaxError']
 print(json.dumps(dict(schema=1,candidate_sha256=p['candidate_sha256'],build_pass=not issues,test_pass=not issues,observations=issues,limitations=['AST only; source not executed'])))
 ''',encoding='utf-8')
         def command(output,proposal=proposer):
-            return [sys.executable,str(ROOT / 'autoforge' / 'applications.py'),'cycle','--request',str(req),'--proposer-command',json.dumps([sys.executable,str(proposal)]),'--builder-command',json.dumps([sys.executable,str(builder)]),'--trusted-adapter','--rounds','2','--output',str(output),'--reference-store',str(root/'refs')]
+            return [sys.executable,str(MODULES/'applications.py'),'cycle','--request',str(req),'--proposer-command',json.dumps([sys.executable,str(proposal)]),'--builder-command',json.dumps([sys.executable,str(builder)]),'--trusted-adapter','--rounds','2','--output',str(output),'--reference-store',str(root/'refs')]
         def invoke(cmd,code):
             p=subprocess.run(cmd,capture_output=True,encoding='utf-8',timeout=30)
             assert p.returncode==code,(p.returncode,p.stdout,p.stderr)
@@ -70,5 +69,4 @@ print(json.dumps(dict(schema=1,candidate_sha256=p['candidate_sha256'],build_pass
             child.wait(timeout=10)
         assert 'in flight' in invoke(ibase+['--resume'],2).stderr
         print(json.dumps({'status':'PASS','scope':'real CLI processes with AST-only operator adapters','checks':['pause-resume source repair','terminal no-repeat','adapter mutation refused','candidate mutation refused','checkpoint corruption refused','request mutation refused','concurrent lock refused','killed inflight refuses replay']}))
-
 if __name__=='__main__':main()

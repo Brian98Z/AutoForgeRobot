@@ -117,6 +117,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    import multiprocessing
+
+    # PyInstaller's Windows spawn helper must consume --multiprocessing-fork before
+    # this dispatcher interprets argv as a module selector or internal script call.
+    multiprocessing.freeze_support()
     raised = sys.argv[1:]
     if getattr(sys, "frozen", False):
         _safe_streams()

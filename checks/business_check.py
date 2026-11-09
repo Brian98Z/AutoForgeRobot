@@ -12,16 +12,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
-
 ROOT = Path(__file__).resolve().parents[1]
 BUILDER = ROOT / "autoforge" / "application_builder.py"
 FIXTURE = ROOT / "fixtures" / "business"
-
 def require(ok: bool, message: str) -> None:
     if not ok:
         raise AssertionError(message)
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine", choices=("docker", "podman"))
@@ -151,7 +147,5 @@ def main() -> int:
         require(report["candidate_sha256"] == manifest["candidate_sha256"] and report["build_pass"] and report["test_pass"], "real container business contract failed")
         print(json.dumps({"status": "PASS", "runtime": "TESTED_IN_CONTAINER", "candidate_sha256": manifest["candidate_sha256"], "observations": report["observations"], "limitations": report["limitations"]}))
         return 0
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

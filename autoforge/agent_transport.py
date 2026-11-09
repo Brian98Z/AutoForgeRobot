@@ -88,19 +88,21 @@ def _stream(body: dict[str, Any], on_event: Callable[[dict[str, Any]], None],
     finish = None
     role_seen = False
     usage = None
+    usage_seen = False
     for chunk in application_proposer.interruptible_stream_completion(
             body, should_stop, application_proposer.MAX_RESPONSE_BYTES):
         if chunk.get("error") is not None:
             raise Refused("API stream returned an error")
-        if "usage" in chunk:
-            if usage is not None:
+        if "usage" in chunk and chunk["usage"] is not None:
+            if usage_seen:
                 raise Refused("API stream contains duplicate usage")
             usage = _usage(chunk["usage"])
+            usage_seen = True
         choices = chunk.get("choices")
         if not isinstance(choices, list) or len(choices) > 1:
             raise Refused("API stream must contain one choice")
         if not choices:
-            if finish is None or set(chunk) - {"choices", "usage", "id", "object", "created", "model", "system_fingerprint", "timings"}:
+            if finish is None or set(chunk) - {"choices", "usage", "id", "object", "created", "model", "system_fingerprint", "service_tier", "timings"}:
                 raise Refused("API stream has an unexpected empty choice")
             continue
         choice = _object(choices[0], "stream choice")
@@ -196,7 +198,7 @@ def complete(messages: list[dict[str, Any]], tools: list[dict[str, Any]], *,
     if not isinstance(envelope, dict):
         raise Refused("API response must be an object")
     choices = envelope.get("choices")
-    usage = _usage(envelope["usage"]) if "usage" in envelope else None
+    usage = _usage(envelope["usage"]) if envelope.get("usage") is not None else None
     if usage is not None and on_event is not None and not envelope.get("stream_usage_emitted"):
         on_event({"type": "model_usage", "usage": usage, "source": "server"})
     if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):

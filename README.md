@@ -24,7 +24,7 @@ Configure an OpenAI-compatible model with `AUTOFORGE_API_BASE`, `AUTOFORGE_MODEL
 
 ## Download
 
-Windows x64 single-file controller: [latest release](https://github.com/Brian98Z/AutoForgeRobot/releases/latest) (`autoforge-0.1.0-windows-x64.exe`, self-signed, SHA-256 in `SHA256SUMS.txt`). Source archives attached by GitHub are not installers.
+The [latest public release](https://github.com/Brian98Z/AutoForgeRobot/releases/latest) remains the historical `v0.1.0` Windows x64 controller (self-signed, SHA-256 in `SHA256SUMS.txt`). The November 9 fixes below are available in source; the updated local EXE has **not** been published as a GitHub Release. The old downloadable binary does not automatically acquire these fixes. Source archives attached by GitHub are not installers.
 
 ## Repository Layout
 
@@ -45,21 +45,38 @@ Build a Windows onefile executable with Python 3.11 and PyInstaller 6.22.3:
 python autoforge/build_exe.py
 ```
 
-The build writes `dist/autoforge.exe` and a dispatcher entry (`autoforge_cli.py`) accepts any bundled module CLI:
+The build writes `dist/autoforge.exe`; the dispatcher accepts a bundled module CLI:
 
 ```powershell
 .\dist\autoforge.exe --list
+.\dist\autoforge.exe agent_mcp --help
 .\dist\autoforge.exe application_capabilities matrix
 .\dist\autoforge.exe application_release check --candidate ... --spec ...
 ```
 
-Frozen subprocess calls using `sys.executable script.py` or `sys.executable -c` are routed back through the dispatcher. The curated 48-script suite is not claimed to have native parity inside the frozen binary.
+Windows multiprocessing workers are handled before module dispatch. Frozen subprocess calls using `sys.executable script.py` or `sys.executable -c` remain supported. Playwright is excluded from the standalone EXE: browser acceptance requires the Python source installation, Playwright and an installed browser. The curated suite is not claimed to have native parity inside the frozen binary.
+
+```bash
+python checks/frozen_delivery_check.py dist/autoforge.exe
+```
+
+This exercises real spawned loopback HTTP/SSE, complete assistant-turn parsing, metadata compatibility, cancellation/worker cleanup and the MCP CLI; it does not call a paid model.
 
 ## MCP integration
 
-AutoForge includes a bounded stdio MCP client (`agent_mcp.py`) for controller-side tool discovery and calls.
-See [docs/MCP.md](docs/MCP.md) for configuration, CLI usage, safety bounds and the two supported agent patterns.
-MCP tools are not injected into the model tool loop.
+AutoForge includes a bounded stdio MCP **client** (`agent_mcp.py`) for controller-side discovery and calls (`list`, `call`). See [docs/MCP.md](docs/MCP.md) for configuration and safety bounds. It is not an AutoForge MCP server, does not inject external MCP tools into the model loop, and does not replace model API configuration.
+
+## November 9 fixes and verification
+
+- Corrected the PyInstaller entrypoint, frozen multiprocessing dispatch and stale verification-script paths after the repository layout change.
+- Accept SSE `service_tier` metadata and nullable usage without weakening malformed-stream refusal.
+- Publish public staged candidate source with explicit non-root read/traverse permissions; secret storage permissions are unchanged.
+- Reject failed required browser resources such as `/app.js` HTTP 401; preserve restart-phase diagnostics.
+- Keep Android offline SDK regression fixtures isolated from network fetches.
+- Complete post-fix curated rerun: **41 PASS / 7 BLOCKED / 0 FAIL**. The seven declared default/opt-in boundaries remain BLOCKED, not silently promoted.
+- Frozen Web candidate: existing independent oracle rerun **33/33 PASS**, administrator/reader workflows passed in Chromium/Firefox/WebKit, restart persistence passed, and the existing local package validated. These are scoped results, not universal correctness or production-security certification.
+
+Image-safety release and external semantic approval remain blocked. No safety baseline was switched and no production application was deployed. The bounded deterministic-maintenance call-count benefit does not establish general learning, cross-domain or monetary savings.
 
 ## Verification
 
@@ -67,4 +84,4 @@ MCP tools are not injected into the model tool loop.
 python autoforge/application_capabilities.py verify --timeout 120 --output verification.json
 ```
 
-Each check reports `PASS`, `BLOCKED`, or `FAIL`. `BLOCKED` marks a declared boundary (unconfigured engine, database, browser, or opt-in model), not a silent pass. Detailed status and evidence binding live in `docs/STATUS.md`.
+Each check reports `PASS`, `BLOCKED`, or `FAIL`. `BLOCKED` marks a declared boundary (unconfigured engine, database, browser, or opt-in model), not a silent pass. Detailed status and evidence binding live in [docs/STATUS.md](docs/STATUS.md). Local runtime evidence, private state, keys, caches and executable artifacts are not part of the source tree.

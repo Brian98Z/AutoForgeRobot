@@ -12,25 +12,18 @@ from pathlib import Path
 import subprocess
 import sys
 import threading
-
 import agent_transport
-
 ROOT = Path(__file__).resolve().parents[1]
-ADAPTER = ROOT / "autoforge" / "application_proposer.py"
-
-
+MODULES = ROOT / "autoforge"
+ADAPTER = MODULES / "application_proposer.py"
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
-
-
 class Simulator(BaseHTTPRequestHandler):
     mode = "valid"
     observed: dict = {}
-
     def log_message(self, _format: str, *args: object) -> None:
         return
-
     def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(length))
@@ -77,8 +70,6 @@ class Simulator(BaseHTTPRequestHandler):
             raw = b'{"choices":[{"finish_reason":"stop","message":{"content":"{"}}]}'
         self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(raw))); self.end_headers()
         self.wfile.write(raw)
-
-
 def main() -> int:
     server = ThreadingHTTPServer(("127.0.0.1", 0), Simulator)
     worker = threading.Thread(target=server.serve_forever, daemon=True); worker.start()
@@ -87,17 +78,14 @@ def main() -> int:
                 "AUTOFORGE_MODEL": "simulated-model", "AUTOFORGE_API_KEY": "simulated-secret"})
     base_request = {"schema": 1, "requirement": {"schema": 1, "goal": "Build a small app", "references": []},
                     "references": [], "previous_validation": {"status": "none"}}
-
     def invoke(payload: dict = base_request) -> subprocess.CompletedProcess[str]:
         return subprocess.run([sys.executable, str(ADAPTER)], input=json.dumps(payload), text=True,
                               cwd=ROOT, env=env, capture_output=True, encoding='utf-8', timeout=35, check=False)
-
     try:
         Simulator.mode = "valid"
         ok = invoke()
         require(ok.returncode == 0, f"valid simulated response rejected: {ok.stderr}")
         require('库存处理' in json.loads(ok.stdout)['files'][0]['content'],'model Unicode source corrupted')
-
         outcomes = {}
         for mode in ("invalid_finish", "refusal", "missing_choices", "duplicate_candidate", "goal_mismatch", "redirect", "oversized", "truncated"):
             Simulator.mode = mode
@@ -151,7 +139,5 @@ def main() -> int:
                 else:os.environ[key]=value
         server.shutdown(); server.server_close(); worker.join(timeout=2)
     return 0
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

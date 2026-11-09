@@ -102,6 +102,7 @@ def run(origin, digest, attestation, contract, out_dir, *, timeout=60, authorize
             context=browser.new_context(accept_downloads=False,service_workers='block'); blocked=[]
             page=context.new_page(); page.set_default_timeout(min(5000,max(1,int((deadline-time.monotonic())*1000))))
             failures=[]
+            resource_failures=[]
             response_trace=[]
             request_trace=[]
             def record_request(request):
@@ -112,12 +113,18 @@ def run(origin, digest, attestation, contract, out_dir, *, timeout=60, authorize
                     response_trace.append({'method':response.request.method,'status':response.status,'path':urlsplit(response.url).path[:256]})
                 if response.status>=400 and len(failures)<16:
                     failures.append({'kind':'http','status':response.status,'path':urlsplit(response.url).path[:512]})
+                if response.status>=400 and response.request.resource_type in {'document','script','stylesheet'} and len(resource_failures)<16:
+                    resource_failures.append({'kind':'resource_http','status':response.status,'path':urlsplit(response.url).path[:512]})
             def record_page_error(error):
                 if len(failures)<16:
                     failures.append({'kind':'javascript','error':str(error)[:512]})
+            def record_request_failure(request):
+                if request.resource_type in {'document','script','stylesheet'} and len(resource_failures)<16:
+                    resource_failures.append({'kind':'resource_transport','path':urlsplit(request.url).path[:512]})
             page.on('request',record_request)
             page.on('response',record_response)
             page.on('pageerror',record_page_error)
+            page.on('requestfailed',record_request_failure)
             def guard(route, request):
                 u=urlsplit(request.url)
                 if u.scheme not in ('http','https','data','blob','about') or (u.scheme in ('http','https') and (u.hostname!='127.0.0.1' or u.port!=urlsplit(origin).port)):
@@ -170,6 +177,8 @@ def run(origin, digest, attestation, contract, out_dir, *, timeout=60, authorize
                     artifacts.append({'name':path.name,'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'size':size})
                 observations.append({'step':n,'action':a,'pass':True})
             if blocked: raise BrowserRefused('external or non-loopback resource request attempted')
+            if resource_failures:
+                raise BrowserRefused('required page resources failed; browser diagnostics: '+json.dumps(resource_failures,ensure_ascii=False,separators=(',',':')))
             browser_version=browser.version
             context.close(); browser.close(); browser=None
         return {'schema':1,'status':'PASS','candidate_sha256':digest,'service_id':attestation['service_id'],'origin':origin,'browser_engine':engine_name,'browser_brand':('Microsoft Edge' if engine_name=='msedge' else 'Google Chrome' if browser_engine=='chromium' and executable else None),'browser_version':browser_version,'observations':observations,'artifacts':artifacts,'duration_ms':round((time.monotonic()-start)*1000),'limitations':['Declarative browser interactions/assertions only; no arbitrary JavaScript evaluation.','HTTP(S) resources are restricted to loopback at the attested port.','Only the selected browser engine is measured; no cross-engine claim unless separate runs are supplied.','Adapter attestation identity is provided in-process by the trusted service controller; it is not independently cryptographically authenticated.']}

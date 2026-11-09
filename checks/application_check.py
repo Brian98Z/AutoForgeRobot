@@ -13,16 +13,12 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-
 ROOT = Path(__file__).resolve().parents[1]
-RUNNER = ROOT / "autoforge" / "applications.py"
-
-
+MODULES = ROOT / "autoforge"
+RUNNER = MODULES / "applications.py"
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
-
-
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="autoforge-app-check-") as temp:
         base = Path(temp)
@@ -88,7 +84,5 @@ print(json.dumps({"schema":1,"candidate_sha256":"0"*64,"build_pass":True,"test_p
                 "unbound builder response was committed or replayable")
         print(json.dumps({"status": "PASS", "scope": "multi-file Python AST syntax only; no runtime/deployment claim", "syntax_correction_rounds": report["rounds_completed"], "foreign_digest": "HOLD"}, indent=2))
     return 0
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

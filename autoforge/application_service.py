@@ -183,7 +183,7 @@ def run(manifest: Any, contract_raw: Any, engine: str, image: str, command: list
                     for secret in secret_values.values():
                         if secret: message=message.replace(secret,'[REDACTED]')
                     rows.append(False)
-                    request_results.append({'index':index,'pass':False,'error':message[:2000]})
+                    request_results.append({'index':index,'phase':'request','pass':False,'error':message[:2000]})
                     break
                 passed=actual['status']==req['expected']['status'] and actual['body']==resolve_scenario(req['expected']['body'],scenario_secrets)
                 if req['path']=='/ui/login' and actual['status']==200:
@@ -195,14 +195,20 @@ def run(manifest: Any, contract_raw: Any, engine: str, image: str, command: list
                                         **({'error':f"HTTP status expected {req['expected']['status']}, received {actual['status']}; body match={actual['body']==resolve_scenario(req['expected']['body'],scenario_secrets)}"} if not passed else {})})
                 if not passed: break
                 if scenario.get('restart_after') == index and passed:
-                    _run([engine,'restart',cid],timeout=10)
-                    restart_deadline=min(execution_deadline,time.monotonic()+10)
-                    while time.monotonic()<restart_deadline:
-                        try:
-                            if _request(port,'GET',contract_raw['health_path'],None)['status']==200: break
-                        except ServiceFailure: pass
-                        time.sleep(.2)
-                    else: raise ServiceFailure('container restart readiness timed out')
+                    try:
+                        _run([engine,'restart',cid],timeout=10)
+                        restart_deadline=min(execution_deadline,time.monotonic()+10)
+                        while time.monotonic()<restart_deadline:
+                            if application_builder.STOP_REQUESTED: raise ServiceFailure('service run stopped')
+                            try:
+                                if _request(port,'GET',contract_raw['health_path'],None)['status']==200: break
+                            except ServiceFailure: pass
+                            time.sleep(.2)
+                        else: raise ServiceFailure('container restart readiness timed out')
+                    except ServiceFailure as exc:
+                        rows[-1]=False
+                        request_results[-1].update({'pass':False,'phase':'restart','error':scrub(str(exc))[:2000]})
+                        break
             observations.append({'name':scenario['name'],'pass':len(rows)==len(scenario['requests']) and all(rows)})
             http_results.append({'scenario':scenario['name'],'requests':request_results})
             for row in request_results:

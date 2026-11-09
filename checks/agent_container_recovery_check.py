@@ -8,15 +8,14 @@ import argparse,hashlib,json,os,subprocess,sys,threading,time,uuid
 from pathlib import Path
 import agent_budget,agent_runtime,agent_session
 ROOT=Path(__file__).resolve().parents[1]
+MODULES=ROOT/'autoforge'
 IMAGE='sha256:673719e071ecf27434fd2635bbd8d00f49f4fdd81f243143438a42ced8bedf60'
-
 def worker(output,resume=False):
     request=json.loads((output/'request.json').read_text(encoding='utf-8'))
     initial=json.loads((output/'initial.json').read_text(encoding='utf-8'))
-    argv=[sys.executable,str(ROOT / 'autoforge' / 'application_builder.py'),'--engine','docker','--image',IMAGE,'--contract',str(output/'contract.json')]
+    argv=[sys.executable,str(MODULES/'application_builder.py'),'--engine','docker','--image',IMAGE,'--contract',str(output/'contract.json')]
     report=agent_runtime.run(request,[],argv,output/'session',max_turns=12,resume=resume,initial_candidate=None if resume else initial,limits=agent_budget.Limits(model_calls=12,tool_calls=32,tokens=500000,seconds=180),allowed_tools=['list_files','read_file','edit_file','validate'])
     print(json.dumps(report));return 0
-
 def main():
     p=argparse.ArgumentParser();p.add_argument('--worker',type=Path);p.add_argument('--resume',action='store_true');a=p.parse_args()
     if a.worker:return worker(a.worker,a.resume)
@@ -65,7 +64,7 @@ def main():
     receipt=None;finished=None
     if observed and gone and blocked['reason']=='unknown_tool_side_effect':
         import agent_reconcile
-        builder=[sys.executable,str(ROOT / 'autoforge' / 'application_builder.py'),'--engine','docker','--image',IMAGE,'--contract',str(out/'contract.json')]
+        builder=[sys.executable,str(MODULES/'application_builder.py'),'--engine','docker','--image',IMAGE,'--contract',str(out/'contract.json')]
         receipt=agent_reconcile.reconcile(out/'session',token,operator='authorized-local-test-controller',source='exact owned container inspected and absent; disposable JSONL validation only',builder_argv=builder)
         continued=subprocess.run(cmd+['--resume'],capture_output=True,text=True,timeout=180,cwd=ROOT)
         finished=agent_session.load(out/'session')

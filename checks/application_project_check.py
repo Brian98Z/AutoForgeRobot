@@ -10,24 +10,17 @@ import sys
 import tempfile
 import threading
 from pathlib import Path
-
 import application_project as project
-
 ROOT = Path(__file__).resolve().parents[1]
-
-
+MODULES = ROOT / "autoforge"
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
-
-
 def candidate(text: str, extra: str = "") -> list[dict[str, str]]:
     files = [{"path": "main.py", "content": text}]
     if extra:
         files.append({"path": "docs/notes.txt", "content": extra})
     return files
-
-
 def main() -> int:
     checks: list[str] = []
     with tempfile.TemporaryDirectory(prefix="autoforge-project-check-") as td:
@@ -57,7 +50,6 @@ def main() -> int:
         active_main.write_bytes(saved_payload)
         checks.append("active revision payload tampering refused")
         checks.append("schema-1 import, exact digests, user-file preservation, diff and immutable active revision")
-
         (source / "unrelated.txt").write_text("new user work\n", encoding="utf-8")
         try:
             project.write_files(source, candidate("value = 3\n"), expected_baseline=imported["baseline"], output=out)
@@ -86,7 +78,6 @@ def main() -> int:
         require(outcomes == ["conflict"] and not worker.is_alive(), "concurrent transaction was not refused")
         checks.append("concurrent transaction lock conflict")
         checks.append("concurrent source conflict includes unrelated user-file edit")
-
         fresh = project.import_project(source, goal="test", mode="existing")
         before = (out / "active.json").read_bytes()
         def interrupt(stage: str) -> None:
@@ -101,7 +92,6 @@ def main() -> int:
         require((out / "active.json").read_bytes() == before, "interrupted stage changed active pointer")
         require(project.status(out)["revision"] == first["revision"], "interrupted commit appeared successful")
         checks.append("interrupted multi-file stage leaves pointer unchanged and no success")
-
         def pointer_interrupt(stage: str) -> None:
             if stage == "before_pointer_replace":
                 raise RuntimeError("simulated pointer interruption")
@@ -113,14 +103,12 @@ def main() -> int:
             raise AssertionError("injected pointer interruption did not propagate")
         require(project.status(out)["revision"] == first["revision"], "pre-replace interruption exposed partial transaction")
         checks.append("pointer interruption atomicity")
-
         (source / "unrelated.txt").write_text("new user work\n", encoding="utf-8")
         second_baseline = project.import_project(source, goal="test", mode="existing")["baseline"]
         second = project.write_files(source, candidate("value = 9\n"), expected_baseline=second_baseline, output=out)
         restored = project.rollback(out, expected_revision=second["revision"])
         require((source / "unrelated.txt").read_text(encoding="utf-8") == "new user work\n", "rollback altered source")
         checks.append("atomic pointer rollback preserves all source files")
-
         new_root = root / "new-project"
         new = project.import_project(new_root, goal="new", mode="new")
         empty = project.write_files(new_root, [], expected_baseline=new["baseline"], output=root / "unused-empty-output")
@@ -136,7 +124,6 @@ def main() -> int:
         else:
             raise AssertionError("transaction output inside source tree was accepted")
         checks.append("explicit new project mode and output/source separation")
-
         secret = source / ".env"
         secret.write_text("PRIVATE_TOKEN=abcd123456789\n", encoding="utf-8")
         try:
@@ -169,16 +156,13 @@ def main() -> int:
         checks.append("ordinary JSON and empty credential values remain importable")
         checks.append("quoted JSON credential property rejection")
         require(project.status(out)["status"] == "ACTIVE", "restored revision did not verify")
-
         config.unlink()
         # Real subprocess entrypoint status path; this does not run any candidate.
-        proc = subprocess.run([sys.executable, str(ROOT / "autoforge" / "application_project.py"), "status", str(out)],
+        proc = subprocess.run([sys.executable, str(MODULES / "application_project.py"), "status", str(out)],
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10, check=False)
         require(proc.returncode == 0 and json.loads(proc.stdout)["status"] == "ACTIVE", "CLI status subprocess failed")
         checks.append("real process CLI status")
     print(json.dumps({"status": "PASS", "scope": "filesystem and process transaction behavior; no generated source executed", "checks": checks}, ensure_ascii=False, indent=2))
     return 0
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

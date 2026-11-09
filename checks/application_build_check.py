@@ -12,21 +12,17 @@ import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
-
 import application_build as entry
 import application_builder as builder
 import references
-
 ROOT=Path(__file__).resolve().parents[1]
-
+MODULES=ROOT/'autoforge'
 class ModelTrap(BaseHTTPRequestHandler):
     calls=0
     def log_message(self,*args):pass
     def do_POST(self):
         type(self).calls+=1
         self.send_response(500);self.end_headers()
-
-
 def main():
     server=ThreadingHTTPServer(('127.0.0.1',0),ModelTrap)
     thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
@@ -40,7 +36,7 @@ def main():
             common=['--request',str(ROOT/'fixtures/business/request.json'),'--contract',str(ROOT/'fixtures/business/contract.json'),
                     '--reference-store',str(root/'store'),'--image','sha256:'+'0'*64,'--output',str(out)]
             def invoke(action,extra=()):
-                return subprocess.run([sys.executable,str(ROOT / 'autoforge' / 'application_build.py'),action,*common,*extra],env=env,capture_output=True,encoding='utf-8',timeout=30)
+                return subprocess.run([sys.executable,str(MODULES/'application_build.py'),action,*common,*extra],env=env,capture_output=True,encoding='utf-8',timeout=30)
             checked=invoke('check');assert checked.returncode==3,(checked.stdout,checked.stderr)
             assert json.loads(checked.stdout)['checks']['container']['status']=='BLOCKED'
             refused=invoke('run');assert refused.returncode==2
@@ -63,5 +59,4 @@ def main():
             print(json.dumps({'status':'PASS','checks':['check invokes no model','missing authorization refuses run','missing engine prevents model invocation','blocked run creates no output','exact oracle reference refused'],'scope':'real CLI blocking path; container success path not exercised'}))
     finally:
         server.shutdown();server.server_close();thread.join(timeout=2)
-
 if __name__=='__main__':main()

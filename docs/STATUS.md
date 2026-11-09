@@ -15,8 +15,8 @@ An AI-driven code iteration toolkit that turns goals and reference code into edi
 Requires Python 3.11+. Configure an OpenAI-compatible model using `AUTOFORGE_API_BASE`, `AUTOFORGE_MODEL`, and `AUTOFORGE_API_KEY` when required.
 
 ```bash
-python application_proposer.py --check-config
-python application_build.py --help
+python autoforge/application_proposer.py --check-config
+python autoforge/application_build.py --help
 ```
 
 Application execution requires a Linux Docker/Podman engine and a trusted local Python image.
@@ -26,10 +26,10 @@ Application execution requires a Linux Docker/Podman engine and a trusted local 
 Build a Windows onefile executable with Python 3.11 and PyInstaller 6.22.3:
 
 ```bash
-python build_exe.py
+python autoforge/build_exe.py
 ```
 
-The build writes `dist/autoforge.exe` (61 MB). Its dispatcher accepts a module CLI and its arguments, lists the 161 bundled entries with `--list`, and provides the `--run-py` shim. Frozen subprocess calls using `sys.executable script.py` or `sys.executable -c` are routed through the bundled dispatcher.
+The build writes `dist/autoforge.exe`; use `--list` for its actual bundled inventory. Windows multiprocessing workers are handled before custom module selection; bundled script and `-c` routes remain available. The 2026-11-09 local rebuild includes `agent_mcp`. Playwright is explicitly excluded: browser acceptance requires the Python source installation, Playwright and an installed browser. The new EXE is unsigned; its historical self-signed certificate does not sign this rebuild.
 
 ```bash
 dist/autoforge.exe --list
@@ -37,12 +37,25 @@ dist/autoforge.exe application_capabilities matrix
 dist/autoforge.exe application_release check --candidate PATH --spec PATH
 ```
 
-The frozen executable was run against the listed application, dependency, image-scan, reference, plan and release checks; the real-Docker release check against the frozen candidate returned PASS with no blockers. `application_capabilities matrix` emits JSON. This does not claim native parity for the curated 48-check suite: `agent_recovery_check`'s worker subprocess did not complete within its 18-second budget.
+Current package verification: `python checks/frozen_delivery_check.py dist/autoforge.exe` passed actual spawned loopback HTTP/SSE, complete assistant-turn parsing, service_tier/nullable usage compatibility, cancellation with zero active children, and `agent_mcp --help`. This deterministic transport check does not call a paid model or certify generated applications. Historical release results below do not certify this rebuild.
 
 
 ## Status
 
-The Python controller uses one native tool loop. P2-03 retains its bounded same-mechanism maintenance-model-call benefit (4 baseline model calls versus 0 deterministic validated-edit reuse calls), not model learning or general/token/cost savings. Local Qwen remains excluded from active blockers by user decision. Explicit runtime retests closed six previously unexercised paths. The latest repaired Web candidate now independently passes all seven scoped quality categories; actual release preflight has only `independent_evaluation:HOLD` remaining. Missing trusted external approval and the original image-safety scan remain separate blockers; no safety baseline switch or production release. Current evidence: `bootstrap-runs/release-quality-20261106-e65ce82f/closeout.json`.
+### External feedback iteration (2026-11-09)
+
+- Fixed PyInstaller source entrypoint and `multiprocessing.freeze_support()` dispatch ordering. Old EXE preserved under `release/windows/previous/`; new artifact/size/hash and checks recorded in `bootstrap-runs/external-feedback-20261109/closeout.json`.
+- `agent_transport` accepts `service_tier` usage-only tails and unavailable `usage: null`; invalid streams and malformed/duplicate non-null usage remain refused. Stream, budget, HTTP retry, runtime HOLD semantics, session, tools and MCP checks passed. External gateway/internal model-call limits must be configured consistently; no automatic extra budget or speculative PASS was introduced.
+- `applications.stage_candidate` publishes public source directories as 0755 and files as 0644 before rename; secret store permissions remain private. A real Linux umask-077 test switched to UID 65534 and read the exact hashed candidate while write was refused. Real non-root HTTP normal restart passed; deliberate restart failure preserved completed request evidence with `phase=restart`. Evidence: `bootstrap-runs/external-feedback-20261109/handoff.json`.
+- Real Chromium interactions/reload/screenshot checks passed; a root page with `/app.js` HTTP 401 is now rejected even when visible text matches. Browser acceptance remains explicit and separate from API-only PASS. Source browser/service checks passed; frozen browser execution is not included.
+- Repaired the existing business check's obsolete root-level builder path; real exact-image Docker execution passed 13 inventory contract responses. Original external frozen candidates, evaluator and scores were not modified or rescored. No new model-quality, production-safety, sample-size, billing or general workflow-superiority claim.
+
+
+The Python controller uses one native tool loop. P2-03 retains its bounded same-mechanism maintenance-model-call benefit (4 baseline calls versus 0 deterministic validated-edit reuse calls), not model learning or general/token/cost savings. Local Qwen remains excluded from active blockers by user decision. Under the registered independent-implementation criterion, the frozen repaired Web candidate's release preflight is PASS with no blockers and its existing local pack is VALID. The independent oracle was rerun at UID 65534 with fresh state (33/33 PASS); Chromium, Firefox and WebKit each passed administrator/reader workflows and persistence passed. External semantic approval and trusted image-safety release remain absent; no production deployment, safety-baseline switch or remote publication. Current evidence: `bootstrap-runs/remaining-todo-20261109-fb5eb039/`; historical candidate generation/engineering-repair provenance is unchanged.
+
+The 2026-11-09 remaining-todo pass repaired stale module paths in nine verification scripts and isolated the Android offline SDK fixture from network fetches. Initial full run: 36 PASS / 7 BLOCKED / 5 FAIL. Final complete rerun: 41 PASS / 7 BLOCKED / 0 FAIL; overall PARTIAL remains intentional, not silently promoted. Additional real project commit/rollback, isolated network-none UID65534 JDK compile and stateful Python/Node adapter wrong-output/crash/duplicate-key rejection checks passed. Seventy-five check scripts parsed. Existing independent oracle rerun passed 33/33; six administrator/reader browser workflows and persistence passed. Source/pack/stage hashes were verified without creating approvals. Evidence: `bootstrap-runs/remaining-todo-20261109-fb5eb039/closeout.json`.
+
+Image safety remains an external release input: official stable backport PR159020/159021 are open; daily Wolfi package updates are not evidence of the required fix. No unchanged historical image was rescanned and no DB age gate or finding suppression was weakened. PEP826 final is 2027-10-05, correcting the earlier October 6 statement; a vendor/stable backport could arrive sooner. Existing unsigned seven-file reviewer packet verifies but does not authorize execution. Two independently trusted signer public keys/pins, per-finding applicability/evidence/expiry and two real signatures over canonical contract bytes, plus external semantic review, remain missing. No baseline switch, production install or publication.
 
 ### Release quality blockers resolved on one frozen candidate (2026-11-06)
 
@@ -141,13 +154,13 @@ The HTTP client retains explicit endpoint configuration, disabled proxies, forbi
 Verification commands:
 
 ```bash
-python agent_stream_check.py
-python agent_runtime_check.py
-python proposer_check.py
-python application_build_check.py
+python checks/agent_stream_check.py
+python checks/agent_runtime_check.py
+python checks/proposer_check.py
+python checks/application_build_check.py
 ```
 
-`bootstrap-runs/agent-stream-verification.json` is the earlier streaming-only record. Current process-recovery coverage is `python agent_recovery_check.py`: actual child crashes/kills, committed-write no-repeat, pending-read continuation, unknown-builder HOLD, terminal no-repeat, authenticated stop/pause/steering/follow-up and event cursors. Its model is a local deterministic HTTP simulator; its builder parses AST only. Real model acceptance is separately retained in `bootstrap-runs/live-session-1034973854774c67a52d4658397fb1f1/live_report.json` (5 model calls, independent FAIL then PASS, unchanged sentinel, terminal resume no extra calls). Other `live-session-*` directories preserve failed attempts; no success-rate claim is made.
+`bootstrap-runs/agent-stream-verification.json` is the earlier streaming-only record. Current process-recovery coverage is `python checks/agent_recovery_check.py`: actual child crashes/kills, committed-write no-repeat, pending-read continuation, unknown-builder HOLD, terminal no-repeat, authenticated stop/pause/steering/follow-up and event cursors. Its model is a local deterministic HTTP simulator; its builder parses AST only. Real model acceptance is separately retained in `bootstrap-runs/live-session-1034973854774c67a52d4658397fb1f1/live_report.json` (5 model calls, independent FAIL then PASS, unchanged sentinel, terminal resume no extra calls). Other `live-session-*` directories preserve failed attempts; no success-rate claim is made.
 
 ## Durable Sessions and Controls
 
@@ -157,9 +170,9 @@ The run directory contains `session.json`, a recoverable `candidate.json` mirror
 
 ```powershell
 $env:AGENT_SESSION_CONTROL_TOKEN = (Get-Content '<run>/.control.json' -Raw | ConvertFrom-Json).token
-python agent_session.py control '<run>' pause --request-id pause-1
-python agent_session.py control '<run>' steering --request-id correction-1 --text 'Preserve the existing public interface.'
-python agent_session.py events '<run>' --after 0 --limit 100
+python autoforge/agent_session.py control '<run>' pause --request-id pause-1
+python autoforge/agent_session.py control '<run>' steering --request-id correction-1 --text 'Preserve the existing public interface.'
+python autoforge/agent_session.py events '<run>' --after 0 --limit 100
 ```
 
 `stop` cancels; `pause` permits safe continuation; `steering` increments the goal version and discards stale in-flight model actions; `follow_up` queues work until the current task boundary. Controls cannot enlarge tools, budgets or deployment rights. Capability expiration/revocation and session ownership are checked. Completed control request IDs are deduplicated.
@@ -186,15 +199,15 @@ Before the first modification of an existing candidate path, the runtime require
 |Reference learning|`application_learning.py`, `application_experience_adapter.py`|Provenance/invalidation, immutable report-bound repair experiences and public-summary export; transfer benefit not established|
 |Quality / dual evaluation|`application_quality.py`, `application_evaluation.py`|Exact artifact evidence, FAIL/flaky/unknown HOLD, heldout reporting and shared-authority detection|
 
-Authored service fixture: `python application_container_acceptance.py --run-fixture --engine docker --image sha256:<exact-local-python-image-id> --private-root F:/OMP/temp/autoforge-private --audit F:/OMP/temp/autoforge-private-audit.jsonl --output F:/OMP/temp/container-service-authored.json --browser-contract fixtures/container_acceptance/authored_browser_contract.json --browser-output F:/OMP/temp/container-service-browser --authorize-browser` runs authenticated API CRUD and a browser form/list/refresh/reload against the same SQLite table, while existing auth/tenant/pagination/idempotency/revocation API checks remain. It records service source/contract digests, bounded actual responses and screenshot digests; it never promotes authored results to generated-app success. Generated integration inputs for an independent model run are `fixtures/container_acceptance/request.json`, `generated_http_contract.json`, and `generated_browser_contract.json`; they are independent public contracts, not model answer material. Do not claim generated acceptance until separate model/container/browser execution completes.
+Authored service fixture: `python autoforge/application_container_acceptance.py --run-fixture --engine docker --image sha256:<exact-local-python-image-id> --private-root F:/OMP/temp/autoforge-private --audit F:/OMP/temp/autoforge-private-audit.jsonl --output F:/OMP/temp/container-service-authored.json --browser-contract fixtures/container_acceptance/authored_browser_contract.json --browser-output F:/OMP/temp/container-service-browser --authorize-browser` runs authenticated API CRUD and a browser form/list/refresh/reload against the same SQLite table, while existing auth/tenant/pagination/idempotency/revocation API checks remain. It records service source/contract digests, bounded actual responses and screenshot digests; it never promotes authored results to generated-app success. Generated integration inputs for an independent model run are `fixtures/container_acceptance/request.json`, `generated_http_contract.json`, and `generated_browser_contract.json`; they are independent public contracts, not model answer material. Do not claim generated acceptance until separate model/container/browser execution completes.
 
 ### Finite benchmark/evaluation protocol
 
-Use `fixtures/benchmark/tasks.json` as a versioned public task manifest (`schema: 2`); it is distinct from and does not modify `fixtures/business/request.json`. Parent binds the original request SHA-256 into `original_request_sha256` before locking the manifest. Its explicit v2 `op` protocol is an operator-authored clarification, not inferred from or copied out of the oracle. `python application_benchmark.py inventory fixtures/benchmark/tasks.json inventory.json --heldout-fraction 20 --partition-key <locked-key>` freezes task order and deterministic heldout membership before optimization. Keep `fixtures/benchmark/oracles.json` separate from task/public lane inputs; it is the authored acceptance oracle, not proposer material. The fixture set is a protocol demonstration, not evidence of runs or broad capability. Inventory partitioning is deterministic but is not a cryptographic secrecy lock.
+Use `fixtures/benchmark/tasks.json` as a versioned public task manifest (`schema: 2`); it is distinct from and does not modify `fixtures/business/request.json`. Parent binds the original request SHA-256 into `original_request_sha256` before locking the manifest. Its explicit v2 `op` protocol is an operator-authored clarification, not inferred from or copied out of the oracle. `python autoforge/application_benchmark.py inventory fixtures/benchmark/tasks.json inventory.json --heldout-fraction 20 --partition-key <locked-key>` freezes task order and deterministic heldout membership before optimization. Keep `fixtures/benchmark/oracles.json` separate from task/public lane inputs; it is the authored acceptance oracle, not proposer material. The fixture set is a protocol demonstration, not evidence of runs or broad capability. Inventory partitioning is deterministic but is not a cryptographic secrecy lock.
 
 Build lane manifest from JSON accepted by `application_evaluation.run_manifest`: `task_id`, task/reference/tool/acceptance SHA-256 values, numeric `budgets`, exact local `image_id` (`sha256:...`), and exact trusted `proposal_argv`/`replay_argv` arrays. `application_benchmark.py manifest input.json manifest.json` writes the content-bound manifest. The same task context and versions are required by `reconcile`; lanes must be independently owned. `lane` only executes explicitly authorized trusted adapter argv (`shell=False`); it refuses without authorization and holds unless supplied a builder-container provenance record. Candidate code must only run through existing `application_build.py`/`application_builder.py` exact-image network-none container path; never put generated source on host and never point the trusted argv at candidate source for host execution. The supplied container report is a provenance assertion, not authenticated proof. Reconciliation records protocol-level same-task replay and conservative status only; declared identity is unauthenticated. Conflict, unknown/HOLD, shared provider or oracle cannot be votes or self-approval.
 
-After collecting actual results matching `application_evaluation.evaluate` schema, run `python application_benchmark.py report inventory.json results.json report.json`; no synthetic/zero metrics are inferred for unreported tasks. Per partition the report emits observed distributions (min/median/max), configured budgets, code change counts, cost microunits, elapsed time, manual touches, refusal and first/repair/HOLD counts. Empty partitions are `NOT_MEASURED`. Cost requires an externally configured/observed cost record; a zero cost input means a measured/configured zero, not absence. CLI import/reconcile: `manifest`, `lane`, `reconcile`, `gate`, and `report` subcommands. Gate `G0`–`G4` presence checks return `READY_FOR_REVIEW`, never approval; gates define dependency, entry, exit, required evidence in `application_evaluation.GATES`.
+After collecting actual results matching `application_evaluation.evaluate` schema, run `python autoforge/application_benchmark.py report inventory.json results.json report.json`; no synthetic/zero metrics are inferred for unreported tasks. Per partition the report emits observed distributions (min/median/max), configured budgets, code change counts, cost microunits, elapsed time, manual touches, refusal and first/repair/HOLD counts. Empty partitions are `NOT_MEASURED`. Cost requires an externally configured/observed cost record; a zero cost input means a measured/configured zero, not absence. CLI import/reconcile: `manifest`, `lane`, `reconcile`, `gate`, and `report` subcommands. Gate `G0`–`G4` presence checks return `READY_FOR_REVIEW`, never approval; gates define dependency, entry, exit, required evidence in `application_evaluation.GATES`.
 
 Parent capability integration: import `application_evaluation` and consume `GATES`, `PLATFORM_MATRIX`, `gate_status(gate,evidence)`, and `benchmark_report(inventory,actual_results)`. Treat gate `READY_FOR_REVIEW` as evidence-presence only, preserve `HOLD`/`INCONCLUSIVE`, and present platform rows as unsupported: CLI, web, background, desktop, mobile and realtime each explicitly lack established platform/protocol/adapter/proof here. Do not claim broad stack support from module availability. The existing Rust dual release boundary remains unchanged and authoritative; benchmark output is descriptive and cannot replace its two-sided release evidence.
 |Delivery / release gate|`application_delivery.py`, `application_release.py`|Filesystem pack/tamper/authorization/idempotency/rollback/reconciliation; no candidate production deployment|
@@ -208,10 +221,10 @@ Release preflight binds approved goal/spec, exact source, dependency provenance,
 ## Verification and Remaining Prerequisites
 
 ```bash
-python application_capabilities.py verify --output bootstrap-runs/unified-verification-20261102.json
-python application_release_check.py
-python application_experience_adapter_check.py
-python agent_live_check.py --case basic
+python autoforge/application_capabilities.py verify --output bootstrap-runs/unified-verification-20261102.json
+python checks/application_release_check.py
+python checks/application_experience_adapter_check.py
+python checks/agent_live_check.py --case basic
 ```
 
 The live command is explicitly local-only and creates a new evidence directory. The default composite case remains harder and has recorded failures; basic PASS does not replace it. The verification runner does not silently launch real models unless authorized with `--live-model`; individual check exit code 0 does not turn a reported NOT_RUN/BLOCKED integration into PASS.
@@ -272,7 +285,7 @@ Housekeeping 2026-11-02: two atomic notes captured and indexed from this session
 
 Guided generated-candidate repair now passes the original container contract: `bootstrap-runs/error-response-repair-8638a84bc4/verification.json`. A real model supplied the final error-response statement (41 output tokens), after the prior condition edit had restored add but broken unknown-operation output. All 5 + 8 independent responses matched; the owned llama process exited in finally. This is explicitly human-diagnosed, cross-probe repair of a generated candidate, not autonomous same-session generation/repair success; P0-04 remains incomplete.
 
-Fresh inventory acceptance entry: `python agent_business_check.py --image sha256:673719e071ecf27434fd2635bbd8d00f49f4fdd81f243143438a42ced8bedf60` while the explicitly owned local model is running. Supply this command as `local_model_test.py`'s test argv, not as a reason to keep llama resident. It calls the unified `application_build.py run` agent path with the unchanged public request, no imported project, the original independent contract and 480-second / 16-call / 250000-reserved-token limits. It exports request/provider/source/tool-schema digests, non-private-reasoning events, immutable validation inventories and terminal no-new-model-call checks to a fresh `bootstrap-runs/business-live-*/business_live_report.json`. HOLD retains failed evidence; repeated validation digests are explicitly ambiguous rather than arbitrarily mapped to one revision. An entrypoint failure before CLI invocation is not a model or business failure.
+Fresh inventory acceptance entry: `python checks/agent_business_check.py --image sha256:673719e071ecf27434fd2635bbd8d00f49f4fdd81f243143438a42ced8bedf60` while the explicitly owned local model is running. Supply this command as `local_model_test.py`'s test argv, not as a reason to keep llama resident. It calls the unified `application_build.py run` agent path with the unchanged public request, no imported project, the original independent contract and 480-second / 16-call / 250000-reserved-token limits. It exports request/provider/source/tool-schema digests, non-private-reasoning events, immutable validation inventories and terminal no-new-model-call checks to a fresh `bootstrap-runs/business-live-*/business_live_report.json`. HOLD retains failed evidence; repeated validation digests are explicitly ambiguous rather than arbitrarily mapped to one revision. An entrypoint failure before CLI invocation is not a model or business failure.
 
 2026-11-03 bounded-runtime verification: tools/runtime/SSE/recovery/build-preflight checks PASS (`bootstrap-runs/bounded-runtime-verification-20261103.json`), including an actionable nonterminal resume after committed baseline FAIL. Two independent fresh real-model attempts did not reach candidate execution: default thinking performed list_files then truncated on model call 2 (`business-live-5eda22bb0c144be29c5835cacb4a898b`); enable_thinking=false performed list_files then emitted an overlong write_file, rejected before dispatch (`business-live-aceda4e5cef34946b67da7f1d96a2a26`). Both retained empty candidates, original request/contract and unchanged limits. The new bounds are exercised refusal behavior, not evidence that the model follows small-step instructions or that from-scratch inventory succeeds. Owned model cleanup closed 8082 and left no AutoForge containers after each attempt; server/template argv and timing are retained in `bounded-runtime-thinking-default-lifecycle-20261103.json` and `bounded-runtime-lifecycle-20261103.json`. P0-04 autonomous generation remains incomplete.
 
@@ -288,7 +301,7 @@ Fresh inventory acceptance entry: `python agent_business_check.py --image sha256
 - Identical failed validation results are compared without their newly generated `revision_path`; otherwise every repeated check looked novel and escaped the no-progress limit. Candidate digest and actual observations remain part of the fingerprint. A regression proves three unchanged failures stop before a fourth model call.
 - Source, tool schema and provider configuration changes continue to invalidate old resume checkpoints. New evidence never rewrites previous failures or broadens the scoped acceptance claims.
 - `bootstrap-runs/benchmark-actual-report-v2.json`: four real model/container task results, with inventory and heldout assignment frozen beforehand. Per-task model calls, successful mutations and prompt/completion usage come from actual journals. All four behavior contracts passed; shared oracle identity leaves independent evidence HOLD. Six platform and ten common-component rows explicitly enumerate scoped/unsupported coverage. One sample per task is not a reliability estimate.
-- Phase gate CLI `python application_spec.py gates` includes execution, enforcement, acceptance and authorization owners, dependencies, entry/exit requirements and outputs. Presence metadata is never automatic approval or a claim that G3/G4 have passed.
+- Phase gate CLI `python autoforge/application_spec.py gates` includes execution, enforcement, acceptance and authorization owners, dependencies, entry/exit requirements and outputs. Presence metadata is never automatic approval or a claim that G3/G4 have passed.
 
 ### Private HTTP/browser and standalone maintenance proof (2026-11-03)
 
@@ -310,7 +323,7 @@ Fresh inventory acceptance entry: `python agent_business_check.py --image sha256
 
 `agent_reconcile.py OUTPUT --operator NAME --source EVIDENCE --builder-argv '<exact original JSON argv>'` requires `AGENT_SESSION_CONTROL_TOKEN`. It refuses arbitrary/HTTP adapters, uncommitted interruptions, changed builder/contract/candidate, and any remaining container mounted from that session's revisions. Only the built-in network-none/read-only/ephemeral JSONL validator is eligible. It seals a reconciliation receipt and returns PAUSED without claiming an accepted result; use the original unchanged runtime invocation with resume afterward. Unknown effects are never cleared automatically. Runtime now persists the BLOCKED refusal in the checkpoint as well as returning it.
 
-`python application_project_live_check.py` exercises a single immutable source/lock/data-contract commit, stage interruption, concurrent user edit and exact rollback through real filesystem/CLI operations. `bootstrap-runs/project-atomic-live-continuation-20261103.json` records PASS; candidate code is not run. `research.md` documents current threat/TCB assumptions and known gaps.
+`python checks/application_project_live_check.py` exercises a single immutable source/lock/data-contract commit, stage interruption, concurrent user edit and exact rollback through real filesystem/CLI operations. `bootstrap-runs/project-atomic-live-continuation-20261103.json` records PASS; candidate code is not run. `research.md` documents current threat/TCB assumptions and known gaps.
 
 ### Bounded model-request recovery (2026-11-03)
 
@@ -322,7 +335,7 @@ The subsequent empty-project inventory run `business-live-bdfd09dfae8b4a45ba7ec5
 
 ### Verified package maintenance CLI
 
-`python application_delivery_maintenance.py --help` exposes pack/export/validate/selfcheck/replay/diagnose/upgrade. Export requires an absent destination outside the source package and compares payload inventory plus metadata bytes. Replay refuses any engine/image differing from sealed metadata; both build and business checks must pass for exit 0. Diagnose checks the envelope digest/schema and refuses in-flight/unknown versions without repairing pending mirrors; it does not establish source compatibility. Upgrade explicitly refuses because no checkpoint migration is defined. Artifact rollback selects and revalidates a prior immutable package, not a database restore.
+`python autoforge/application_delivery_maintenance.py --help` exposes pack/export/validate/selfcheck/replay/diagnose/upgrade. Export requires an absent destination outside the source package and compares payload inventory plus metadata bytes. Replay refuses any engine/image differing from sealed metadata; both build and business checks must pass for exit 0. Diagnose checks the envelope digest/schema and refuses in-flight/unknown versions without repairing pending mirrors; it does not establish source compatibility. Upgrade explicitly refuses because no checkpoint migration is defined. Artifact rollback selects and revalidates a prior immutable package, not a database restore.
 
 Parent actual CLI evidence: `bootstrap-runs/maintenance-parent-ef532841e6c9/verification.json`. Pack, export, validate, exact-image preflight and three-response fresh-Docker replay exited 0; wrong-contract replay exited 2, absent-image preflight 3, and replay image substitution 2. Source candidate remained packaged unchanged. This remains the declared JSONL contract, not production deployment or redistribution permission.
 
@@ -330,7 +343,7 @@ Stop/capability regression: `bootstrap-runs/stop-capability-verification-2026110
 
 ### Bounded engineering queue and heldout queries
 
-Create an engineering queue through `python application_spec.py plan <approved-spec.json> --adapters <trusted-argv-map.json> --output <absent-plan.json>`. `application_plan.py run PLAN --timeout 120 --max-tasks 1` uses one finite deadline and the existing bounded process runner; `pause` interrupts a running trusted adapter, leaving UNKNOWN rather than replaying an uncertain effect. Task completion must echo exact task/attempt/acceptance identities. `--max-tasks 0` dispatches nothing. The actual subprocess/CLI checks passed in `bootstrap-runs/control-integration-verification-20261103.json`; these do not establish autonomous generated-project planning.
+Create an engineering queue through `python autoforge/application_spec.py plan <approved-spec.json> --adapters <trusted-argv-map.json> --output <absent-plan.json>`. `application_plan.py run PLAN --timeout 120 --max-tasks 1` uses one finite deadline and the existing bounded process runner; `pause` interrupts a running trusted adapter, leaving UNKNOWN rather than replaying an uncertain effect. Task completion must echo exact task/attempt/acceptance identities. `--max-tasks 0` dispatches nothing. The actual subprocess/CLI checks passed in `bootstrap-runs/control-integration-verification-20261103.json`; these do not establish autonomous generated-project planning.
 
 `application_build.py run --mode agent --validation-kind heldout --oracle-ledger <private-external-ledger.json> --max-oracle-queries N ...` selects the trusted `application_oracle.py` wrapper; default public validation remains unchanged. A query reserves its allowance durably before dispatch and binds the exact contract digest and immutable candidate. Unknown outcomes remain reserved and stop further queries. Heldout feedback exposes only status/artifact and coarse reasons, never per-case detail. Runtime retains unknown inflight; known cap exhaustion returns BLOCKED/HOLD without marking the candidate FAIL. Resume identities bind wrapper and nested builder/contract bytes, not mutable ledger contents. Operator can still change/delete private ledgers; same-host integrity is part of the TCB, not an adversarial tamper-proof service.
 
@@ -594,7 +607,7 @@ The original 482-line README was restored by chronological replay of successful 
 
 `bootstrap-runs/integrated-development-final-20261104.json` records 39 PASS and 7 BLOCKED, zero FAIL, across 46 curated checks. This is PARTIAL, not full stage approval; unexecuted deployment/database/live-model scopes remain blocked. The later platform trust-gate check also passed; native execution was not performed.
 
-Durable business components now expose an authenticated loopback HTTP service: `python application_components_service.py --root <private-data-directory> --token-file <operator-token-file>`. `bootstrap-runs/components-service-live-20261104.json` records authentication, upload/download across restart, concurrent queue leases, scheduler/search/cache/records/import-export, and explicitly authorized local trusted-TLS side effects. This proves the standalone trusted service, not autonomous generated-application integration.
+Durable business components now expose an authenticated loopback HTTP service: `python autoforge/application_components_service.py --root <private-data-directory> --token-file <operator-token-file>`. `bootstrap-runs/components-service-live-20261104.json` records authentication, upload/download across restart, concurrent queue leases, scheduler/search/cache/records/import-export, and explicitly authorized local trusted-TLS side effects. This proves the standalone trusted service, not autonomous generated-application integration.
 
 `stateful_reconstruction_live_driver.py` uses the ordinary agent runtime with `stateful_reconstruction_adapter.py` as the trusted builder. The full seven-scenario persisted reference self-check and intentionally wrong candidate rejection passed in exact Python/Node images. A completed business FAIL now returns a successful adapter protocol exit with `test_pass=false`; the trusted-executor negative smoke passed. Live4 remains blocked with its original unknown-effect record; do not replay it. Live5 ended HOLD at 12 model calls, without a passing generated candidate. Persistence scope is sequential child processes sharing ephemeral container `/tmp`, not concurrent-writer guarantees.
 
@@ -741,7 +754,7 @@ Focused PSF/Alpine research is retained as attributed `PythonAdvisories-research
 
 `application_android_build.py` now imports the required shlex/time/uuid modules, defines the private writable output directory, mounts only the already-validated candidate snapshot and resolved SDK directory, and preserves the image's JDK PATH/JAVA_HOME rather than replacing it. The old path failed with a real `NameError`; the old PATH also failed actual `javac` discovery in the exact local JDK image. No SDK license was accepted or system component enabled.
 
-Evidence: `bootstrap-runs/android-build-repair-87c5d6572b/`. `python application_android_build_check.py --isolated-image sha256:4b1a74fbffbe6b4e7b6f0171a472478282fb463790a51edf10e465d578f22b69` passed actual network-none nonroot container assertions: manifest-only staged Java remains unchanged when the source is altered immediately before dispatch, unlisted files are absent, temporary output is writable, and the real JDK compiles the staged inert class. An authored SDK tool fixture deliberately exits 73 after those assertions; the adapter refuses publication and removes its owned container/staging. This is a real build-boundary regression, **not** a genuine APK, Google SDK, emulator or native business acceptance. Default offline Android checks also passed. Platform guard/SSE checks passed with fixture connection-reset stderr retained, not suppressed.
+Evidence: `bootstrap-runs/android-build-repair-87c5d6572b/`. `python checks/application_android_build_check.py --isolated-image sha256:4b1a74fbffbe6b4e7b6f0171a472478282fb463790a51edf10e465d578f22b69` passed actual network-none nonroot container assertions: manifest-only staged Java remains unchanged when the source is altered immediately before dispatch, unlisted files are absent, temporary output is writable, and the real JDK compiles the staged inert class. An authored SDK tool fixture deliberately exits 73 after those assertions; the adapter refuses publication and removes its owned container/staging. This is a real build-boundary regression, **not** a genuine APK, Google SDK, emulator or native business acceptance. Default offline Android checks also passed. Platform guard/SSE checks passed with fixture connection-reset stderr retained, not suppressed.
 
 ### Real SQLite package remediation: 12 to 11 image findings
 

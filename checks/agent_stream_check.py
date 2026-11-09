@@ -12,20 +12,15 @@ import tempfile
 import threading
 import time
 from unittest.mock import patch
-
 import agent_runtime
 import agent_transport
 import application_proposer
-
-
 class Simulator(BaseHTTPRequestHandler):
     mode = "valid"
     gate = None
     requests = 0
-
     def log_message(self, *_args):
         pass
-
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         type(self).requests += 1
@@ -42,20 +37,22 @@ class Simulator(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json" if self.mode == "wrong_type" else "text/event-stream")
         self.end_headers()
-
         def send(value):
             raw = b"data: " + (value if isinstance(value, bytes) else json.dumps(value, ensure_ascii=False).encode("utf-8")) + b"\r\n\r\n"
             # Split inside UTF-8 and SSE delimiters as well as JSON tokens.
             for start in range(0, len(raw), 7):
                 self.wfile.write(raw[start:start + 7])
                 self.wfile.flush()
-
         def chunk(delta, finish=None):
             return {"choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
-
         try:
             if self.mode == "idle_stream":
                 time.sleep(5)
+                return
+            if self.mode == "usage_null":
+                send(chunk({"role": "assistant", "content": "结束"}, "stop"))
+                send({"choices": [], "service_tier": "default", "usage": None})
+                send(b"[DONE]")
                 return
             if any(isinstance(message, dict) and message.get("role") == "tool" for message in body.get("messages", [])) and self.mode in ("valid", "schema"):
                 send(chunk({"role": "assistant", "content": "结束"}, "stop"))
@@ -86,14 +83,13 @@ class Simulator(BaseHTTPRequestHandler):
                 send(chunk({"content": "late"}))
             if self.mode != "no_usage":
                 usage_total = 99 if self.mode == "malformed_usage" else 13
-                send({"choices": [], "usage": {"prompt_tokens": 3, "completion_tokens": 10,
-                                                 "total_tokens": usage_total}})
+                send({"choices": [], "service_tier": "default", "usage": {
+                    "prompt_tokens": 3, "completion_tokens": 10,
+                    "total_tokens": usage_total}})
             if self.mode != "missing_done":
                 send(b"[DONE]")
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             pass
-
-
 def main():
     server = ThreadingHTTPServer(("127.0.0.1", 0), Simulator)
     worker = threading.Thread(target=server.serve_forever, daemon=True)
@@ -109,7 +105,6 @@ def main():
             Simulator.gate = threading.Event()
             output = root / "valid"
             observed = []
-
             def observe():
                 deadline = time.monotonic() + 5
                 while time.monotonic() < deadline:
@@ -120,7 +115,6 @@ def main():
                         return
                     time.sleep(0.01)
                 Simulator.gate.set()
-
             watcher = threading.Thread(target=observe)
             watcher.start()
             report = agent_runtime.run(request, [], ["never-run-builder"], output, 2)
@@ -156,6 +150,13 @@ def main():
                 assert exc.reason_code == "protocol"
             else:
                 raise AssertionError("malformed server usage was accepted")
+            Simulator.mode = "usage_null"
+            observed_usage = []
+            answer = agent_transport.complete([{"role": "user", "content": "usage"}], agent_runtime.TOOLS,
+                                              on_event=observed_usage.append)
+            assert answer["role"] == "assistant"
+            assert any(event["type"] == "model_usage_unavailable" for event in observed_usage)
+            outcomes["nullable_usage_metadata"] = "PASS; null usage treated as unavailable, not malformed"
             Simulator.mode = "valid"
             Simulator.requests = 0
             deltas = []
@@ -195,7 +196,5 @@ def main():
         server.server_close()
         worker.join(timeout=2)
     print(json.dumps({"status": "PASS", "scope": "real loopback HTTP/SSE transport and candidate-file tool execution; simulator is not a model; no generated code executed", "checks": outcomes}, ensure_ascii=True, indent=2))
-
-
 if __name__ == "__main__":
     main()

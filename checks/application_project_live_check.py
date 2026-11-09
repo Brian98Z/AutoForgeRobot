@@ -10,25 +10,18 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-
 import application_project as project
-
 ROOT = Path(__file__).resolve().parents[1]
-
-
+MODULES = ROOT / "autoforge"
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
-
-
 def cli(*args: str) -> dict:
-    result = subprocess.run([sys.executable, str(ROOT / "autoforge" / "application_project.py"), *args],
+    result = subprocess.run([sys.executable, str(MODULES / "application_project.py"), *args],
                             cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             timeout=15, check=False)
     if result.returncode != 0:
         raise AssertionError(f"project CLI failed ({result.returncode}): {result.stderr.decode('utf-8', 'replace')}")
     return json.loads(result.stdout.decode("utf-8"))
-
-
 def candidate(version: int) -> list[dict[str, str]]:
     contract = {"schema": 1, "entity": "item", "fields": {"sku": "string", "quantity": "integer"},
                 "required": ["sku", "quantity"]}
@@ -37,8 +30,6 @@ def candidate(version: int) -> list[dict[str, str]]:
         {"path": "requirements.lock", "content": f"# locked dependencies for revision {version}\n"},
         {"path": "data-contract.json", "content": json.dumps(contract, sort_keys=True, separators=(",", ":")) + "\n"},
     ]
-
-
 def main() -> int:
     checks: list[str] = []
     with tempfile.TemporaryDirectory(prefix="autoforge-project-live-") as td:
@@ -53,7 +44,6 @@ def main() -> int:
         imported = project.import_project(source, goal="atomically revise app, lock and data contract", mode="existing")
         baseline = imported["baseline"]
         before_pointer = (output / "active.json").read_bytes() if (output / "active.json").exists() else None
-
         def interrupt(stage: str) -> None:
             if stage == "after_revision_stage":
                 raise RuntimeError("injected interruption after immutable payload staging")
@@ -71,7 +61,6 @@ def main() -> int:
         if sentinel.read_text(encoding="utf-8") != "operator-owned source remains untouched\n":
             raise AssertionError("interruption lost source sentinel")
         checks.append("injected post-stage interruption leaves pointer empty and source intact")
-
         def concurrent_source_edit(stage: str) -> None:
             if stage == "after_revision_stage":
                 sentinel.write_text("concurrent operator edit retained\n", encoding="utf-8")
@@ -88,7 +77,6 @@ def main() -> int:
         if sentinel.read_text(encoding="utf-8") != "concurrent operator edit retained\n":
             raise AssertionError("concurrent source sentinel was lost")
         checks.append("concurrent source edit during staging refuses commit, keeps pointer empty and preserves edit")
-
         baseline = project.import_project(source, goal="atomically revise app, lock and data contract", mode="existing")["baseline"]
         baseline_path = base / "baseline.json"
         baseline_path.write_text(json.dumps(baseline, sort_keys=True), encoding="utf-8")
@@ -107,7 +95,6 @@ def main() -> int:
             raise AssertionError("first commit did not stage source, lock and data contract as one payload")
         if sentinel.read_text(encoding="utf-8") != "concurrent operator edit retained\n":
             raise AssertionError("successful commit overwrote source sentinel")
-
         candidate_path.write_text(json.dumps(candidate(2), sort_keys=True), encoding="utf-8")
         second = cli("commit", str(source), str(baseline_path), str(candidate_path), str(output))
         if second["status"] != "COMMITTED":
@@ -134,7 +121,5 @@ def main() -> int:
     print(json.dumps({"status": "PASS", "scope": "actual CLI plus real filesystem import/write_files/rollback; no generated candidate executed",
                       "checks": checks, "evidence": evidence}, ensure_ascii=True, sort_keys=True, indent=2))
     return 0
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

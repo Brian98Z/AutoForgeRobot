@@ -8,10 +8,8 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 import argparse, hashlib, io, json, subprocess, tempfile, zipfile
 from pathlib import Path
 import application_android_build as android
-
 def check(condition, message):
     if not condition: raise AssertionError(message)
-
 def isolated_staging_check(image):
     """Use an inert SDK tool to check the real container boundary, not APK output."""
     with tempfile.TemporaryDirectory(prefix='autoforge-android-isolation-') as td:
@@ -57,7 +55,6 @@ exit 73
         remaining=subprocess.run(['docker','ps','-aq','--filter',f'name=^{name}$'],capture_output=True,text=True,timeout=20,check=True)
         check(not remaining.stdout.strip(),'owned build container remains')
     return {'status':'PASS','scope':'actual network-none nonroot JDK compile and manifest-only staging; inert SDK deliberately fails, not APK/native acceptance'}
-
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--isolated-image',help='opt in to actual Docker staging regression with exact local Linux JDK sha256 ID')
@@ -92,7 +89,7 @@ def main():
         import unittest.mock as mock
         fake={'schema':1,'repository':android.REPO,'repository_xml_sha256':'0'*64,'packages':fixture}
         def cached(pkg,cache): return pkg['test_archive']
-        with mock.patch.object(android,'official_inventory',return_value=fake), mock.patch.object(android,'packages',return_value=fixture), mock.patch.object(android,'_download_package',side_effect=cached):
+        with mock.patch.object(android,'official_inventory',return_value=fake), mock.patch.object(android,'fetch',return_value=xml), mock.patch.object(android,'packages',return_value=fixture), mock.patch.object(android,'_download_package',side_effect=cached):
             result=android.provision(host/'sdk','35','36.0.0',None,True)
         check(result['status']=='PROVISIONED' and len(result['packages'])==5,'SDK provisioning receipt failed')
         check((host/'sdk'/'platforms'/'android-35'/'android.jar').read_bytes()==b'jar','platform SDK package was not installed correctly')
@@ -103,5 +100,4 @@ def main():
     result={'status':'PASS','scope':'offline parser, archive traversal defense and provisioning layout guards','sdk_downloaded':False,'candidate_executed':False,'device_used':False}
     if args.isolated_image: result['isolated_staging']=isolated_staging_check(args.isolated_image)
     print(json.dumps(result,sort_keys=True))
-
 if __name__=='__main__': main()
