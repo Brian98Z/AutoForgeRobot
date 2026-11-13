@@ -29,13 +29,13 @@ python autoforge/application_capabilities.py matrix
 Current release: `v0.1.1` — see [latest release](https://github.com/Brian98Z/AutoForgeRobot/releases/latest)
 and verify every file against the attached `SHA256SUMS.txt`. Packages are **unsigned**.
 
-| Platform | Single file | Folder (fast start) |
+| Platform | Single file | Folder |
 | --- | --- | --- |
-| Windows x64 | `autoforge-0.1.1-windows-x64.exe` (~750 ms start) | `…-windows-x64-onedir.zip` (~85 ms) |
-| Linux x64 | `autoforge-0.1.1-linux-x64.tar.gz` (~310 ms) | `…-linux-x64-onedir.tar.gz` (~175 ms) |
+| Windows x64 | `autoforge-0.1.1-windows-x64.exe` | `...-windows-x64-onedir.zip` |
+| Linux x64 | `autoforge-0.1.1-linux-x64.tar.gz` | `...-linux-x64-onedir.tar.gz` |
 
-The single-file builds unpack their payload on every start; the onedir builds are extracted once and are
-roughly nine times faster to launch. GitHub's auto-generated Source code archives are not installers.
+The single-file builds unpack their payload on every start; the onedir builds are extracted once and run
+without unpacking. GitHub's auto-generated Source code archives are not installers.
 
 ## Repository Layout
 
