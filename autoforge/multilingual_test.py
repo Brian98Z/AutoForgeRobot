@@ -8,14 +8,16 @@ import sys
 import time
 import uuid
 
+import paths
+
 ROOT=Path(__file__).resolve().parents[1]
 
 
 def main():
     out=ROOT/'bootstrap-runs'/('multilingual-'+uuid.uuid4().hex[:12]);out.mkdir(parents=True)
     env=dict(os.environ,AUTOFORGE_PROJECT=str(ROOT),AUTOFORGE_PROVIDER='offline')
-    exe=ROOT/'target/release/autoforge.exe'
-    julia=ROOT/'runtime/julia-1.13.3/bin/julia.exe'
+    exe=paths.release_binary(ROOT)
+    julia=paths.julia_binary(ROOT)
     providers={'python':[sys.executable,ROOT/'providers/python_agent.py'],
                'julia':[julia,'--startup-file=no',f'--project={ROOT / "providers"}',ROOT/'providers/julia_agent.jl']}
     report=dict(status='RUNNING',checks=[],provider_invalid_inputs=[],commands=[],errors=[])

@@ -8,7 +8,6 @@ import json, tempfile, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import application_effects as E
-
 class Peer:
     def __init__(self):
         self.rows={};self.fail_after_commit=False;outer=self
@@ -26,7 +25,6 @@ class Peer:
                 data=json.dumps(obj).encode();self.send_response(status);self.send_header("Content-Length",str(len(data)));self.end_headers();self.wfile.write(data)
         self.server=ThreadingHTTPServer(("127.0.0.1",0),Handler);self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start();self.endpoint=f"http://127.0.0.1:{self.server.server_port}"
     def close(self):self.server.shutdown();self.server.server_close();self.thread.join(timeout=3)
-
 def main():
     peer=Peer()
     try:

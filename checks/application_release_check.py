@@ -12,11 +12,9 @@ import application_dependencies as deps
 import application_quality as quality
 import application_release as release
 import application_spec as spec
-
 def _approved_spec():
     raw={'schema':1,'spec_id':'release-check','version':1,'goal':'Release checked artifact','requirements':[{'id':'R1','statement':'Ship exact candidate','provenance':'user','source':'test request','inputs':['candidate'],'outputs':['pack'],'failures':['reject invalid evidence'],'invariants':['candidate hash is bound'],'state_transitions':['staged to packed'],'non_goals':['execute candidate'],'acceptance_ids':['A1'],'ambiguity_ids':[],'conflict_ids':[]}],'entities':[{'id':'Artifact','fields':[{'name':'digest','type':'sha256','required':True,'constraints':['exact'],'provenance':'user','source':'test request'}],'constraints':['immutable'],'roles':['operator']}],'tasks':[{'id':'verify','title':'Verify release','depends_on':[],'requirement_ids':['R1'],'acceptance_ids':['A1'],'kind':'verification'}],'oracle':{'public_acceptance_ids':['A1'],'hidden_oracle_ids':['H1'],'separation':'Hidden answers stay unavailable.'},'ambiguities':[],'conflicts':[],'non_goals':['candidate execution'],'approval':{'status':'draft','operator':'','breaking_change_authorized':False,'authorization_source':''}}
     return spec.approve_spec(spec.propose_spec(raw),operator='release-check-operator',authorization_source='explicit fixture authorization')
-
 def main():
   with tempfile.TemporaryDirectory(prefix='autoforge-release-check-') as td:
     root=Path(td); candidate=root/'candidate'; delivery.applications.stage_candidate({'schema':1,'goal':'Release checked artifact','references':[],'files':[{'path':'src/main.py','content':'raise SystemExit("must not execute")\n'}]},candidate)
@@ -50,7 +48,6 @@ def main():
       assert blocked['status']=='HOLD' and blocked['checks']['container']['status']=='BLOCKED'
     finally: release.builder.preflight=original
     print(json.dumps({'status':'PASS','checks':['explicit optional anti-cheat policy preserves supported release path','required unresolved anti-cheat keeps release preflight on HOLD'],'candidate_execution':'NOT_RUN','deployment_smoke':'NOT_TESTED'}))
-
 def builder_missing():
   import application_builder as builder
   return builder.MissingPrerequisite('fixture: unavailable runtime')

@@ -37,7 +37,7 @@ def _safe_name(value: str) -> str:
 def _is_reparse(path: Path) -> bool:
     try:
         import stat
-        return path.is_symlink() or bool(path.lstat().st_file_attributes & getattr(stat,'FILE_ATTRIBUTE_REPARSE_POINT',0x400))
+        return path.is_symlink() or bool(getattr(path.lstat(),'st_file_attributes',0) & getattr(stat,'FILE_ATTRIBUTE_REPARSE_POINT',0x400))
     except FileNotFoundError:return False
 
 class ComponentRuntime:

@@ -8,19 +8,14 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 import json
 import tempfile
 from pathlib import Path
-
 import application_evaluation as evaluation
 import application_stage_evidence as stages
-
-
 def refused(fn):
     try:
         fn()
     except (ValueError, OSError):
         return
     raise AssertionError("expected refusal")
-
-
 def main():
     with tempfile.TemporaryDirectory(prefix="autoforge-stage-") as tmp:
         root = Path(tmp)
@@ -61,7 +56,5 @@ def main():
         refused(lambda: stages.capture(plan, root, root / "escaped"))
         assert not (root / "escaped").exists()
     print(json.dumps({"status": "PASS", "scope": "immutable snapshots, source drift, overwrite refusal, tamper, dependency chain and traversal; not semantic stage approval"}))
-
-
 if __name__ == "__main__":
     main()

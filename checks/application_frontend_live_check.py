@@ -1,5 +1,4 @@
 """Acquire and run a real Preact + TypeScript frontend build in an offline exact-image container.
-
 Registry metadata and tarballs are fetched only after --authorized; tarballs flow through
 application_dependencies.acquire_https. This proves compiler build and Node-side framework rendering,
 not browser rendering. No npm install or candidate code runs on the host.
@@ -13,13 +12,10 @@ import argparse, base64, hashlib, json, urllib.error, urllib.parse, urllib.reque
 from pathlib import Path
 import application_dependencies as deps
 import application_toolchain as toolchain
-
 REGISTRY='https://registry.npmjs.org'
 SOURCE='npmjs'
 PACKAGES=(('preact','10.26.4'),('preact-render-to-string','6.3.1'),('typescript','5.9.3'))
-
 class FrontendRefused(ValueError): pass
-
 def _metadata(name:str,version:str)->dict:
     url=f'{REGISTRY}/{urllib.parse.quote(name,safe="@")}/{urllib.parse.quote(version,safe="")}'
     request=urllib.request.Request(url,headers={'User-Agent':'AutoForge-frontend-acceptance/1','Accept':'application/json','Accept-Encoding':'identity'},method='GET')
@@ -47,7 +43,6 @@ def _metadata(name:str,version:str)->dict:
     if isinstance(license_value,dict):license_value=license_value.get('type')
     if not isinstance(license_value,str) or not license_value.strip():raise FrontendRefused(f'npm license identifier unavailable for {name}@{version}')
     return {'metadata':doc,'metadata_sha256':hashlib.sha256(raw).hexdigest(),'tarball_url':dist['tarball'],'sha512':sri,'license':license_value}
-
 def _version_key(value:str)->tuple:
     import re
     match=re.fullmatch(r'(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?',value)
@@ -55,7 +50,6 @@ def _version_key(value:str)->tuple:
     major,minor,patch,pre=match.groups()
     identifiers=tuple((0,int(x)) if x.isdigit() else (1,x) for x in (pre or '').split('.') if x)
     return int(major),int(minor),int(patch),0 if pre else 1,identifiers
-
 def _versions(name:str)->list[str]:
     url=f'{REGISTRY}/{urllib.parse.quote(name,safe="@")}'
     request=urllib.request.Request(url,headers={'User-Agent':'AutoForge-frontend-acceptance/1','Accept':'application/json','Accept-Encoding':'identity'},method='GET')
@@ -70,8 +64,6 @@ def _versions(name:str)->list[str]:
     except (UnicodeError,ValueError) as exc:raise FrontendRefused('npm version listing is not JSON') from exc
     if not isinstance(doc,dict) or not isinstance(doc.get('versions'),dict):raise FrontendRefused('npm version listing malformed')
     return [v for v,info in doc['versions'].items() if isinstance(info,dict) and not info.get('deprecated') and '-' not in v and _version_key(v)[0]>=0]
-
-
 def _candidate(root:Path)->dict:
     files={
       'package.json':b'{"name":"autoforge-preact-smoke","version":"1.0.0","private":true,"dependencies":{"preact":"10.26.4","preact-render-to-string":"6.3.1"},"devDependencies":{"typescript":"5.9.3"},"scripts":{"build":"tsc -p tsconfig.json"}}\n',
@@ -88,7 +80,6 @@ def _candidate(root:Path)->dict:
     manifest={'schema':1,'goal':'build and server-render generated Preact frontend','references':['registry.npmjs.org exact-version metadata'],'files':rows}
     manifest['candidate_sha256']=hashlib.sha256(json.dumps(manifest,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
     return manifest
-
 def main()->int:
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--authorized',action='store_true',help='explicitly authorize exact-version npm registry metadata and tarball acquisition')

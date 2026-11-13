@@ -9,9 +9,8 @@ import copy
 import json
 import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "autoforge"))
 import application_spec as spec
-
-
 def fixture():
     return {
         "schema": 1, "spec_id": "inventory", "version": 1, "goal": "Manage inventory items",
@@ -32,21 +31,15 @@ def fixture():
         "ambiguities": [], "conflicts": [], "non_goals": ["No authentication"],
         "approval": {"status": "draft", "operator": "", "breaking_change_authorized": False,
                      "authorization_source": ""}}
-
-
 def rejects(fn, label):
     try:
         fn()
     except spec.SpecRefused:
         return
     raise AssertionError(f"{label} was not rejected")
-
-
 def _tool_result(name, result, call_id="spec-call"):
     return {"tool_calls": [{"id": call_id, "type": "function",
         "function": {"name": name, "arguments": json.dumps(result)}}]}
-
-
 def check_controller_bound_goal():
     context = "Use an operator-selected local SQLite file and explicit JSON envelope."
     goal = "\n  Build something.  "
@@ -99,8 +92,6 @@ def check_controller_bound_goal():
                     "provider-altered public acceptance IDs")
     finally:
         spec.agent_transport.complete = original
-
-
 def check_issue_early_stop():
     goal = "Exact original goal"
     context = "Controller design specifies the compatible implementation choices."
@@ -129,8 +120,6 @@ def check_issue_early_stop():
             raise AssertionError("blocking ambiguity reached planning")
     finally:
         spec.agent_transport.complete = original
-
-
 def check_task_stage_repair():
     original=spec.agent_transport.complete
     calls=[]
@@ -154,8 +143,6 @@ def check_task_stage_repair():
         assert any(e.get("type")=="proposal_correction" and e.get("stage")=="submit_tasks" for e in observed)
     finally:
         spec.agent_transport.complete=original
-
-
 def check_bounded_correction():
     original = spec.agent_transport.complete
     attempts = []
@@ -198,8 +185,6 @@ def check_bounded_correction():
         assert attempts == ["requirements"]
     finally:
         spec.agent_transport.complete = original
-
-
 def check_bindings():
     bad = fixture(); bad["tasks"][0].pop("requirement_ids")
     rejects(lambda: spec.validate_spec(bad), "missing task requirement ID")
@@ -219,8 +204,6 @@ def check_bindings():
     rejects(lambda: spec.validate_spec(bad), "invalid provenance category")
     bad = fixture(); bad["tasks"][0]["requirement_ids"] = ["R-ADD", "R-ADD"]
     rejects(lambda: spec.validate_spec(bad), "duplicate task requirement ID")
-
-
 def main():
     check_controller_bound_goal()
     check_issue_early_stop()
@@ -263,7 +246,5 @@ def main():
     assert all(g["blocked_is_reported"] and g["entry_conditions"] and g["outputs"] and g["exit_conditions"] for g in gates)
     assert gates[1]["excluded_requirements"] == ["multiple providers", "GUI", "full context compression", "multi-agent"]
     print("application_spec_check: PASS (staged proposal, hidden-oracle separation, bounded correction, issue early-stop, requirement/task binding, versioning, approval and A13 gates)")
-
-
 if __name__ == "__main__":
     main()

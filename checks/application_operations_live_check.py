@@ -1,5 +1,4 @@
 """Opt-in Linux Docker lifecycle exercise using authored local container fixtures only.
-
 Requires an explicitly authorized local image ID, deployment root, and acceptance evidence.
 No network/paid service is used and the authored service source is never run on the host.
 """

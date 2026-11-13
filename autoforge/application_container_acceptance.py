@@ -159,6 +159,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     detail = None
     error = None
     with tempfile.TemporaryDirectory(prefix="autoforge-container-acceptance-") as tmp:
+        os.chmod(tmp,0o755)
         workspace = Path(tmp) / "candidate"
         workspace.mkdir()
         manifest = _manifest(workspace, _fixture_source())

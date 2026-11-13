@@ -12,10 +12,8 @@ import subprocess
 import sys
 import time
 import uuid
-
+import iterate
 ROOT=Path(__file__).resolve().parents[1]
-
-
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--rounds',type=int,default=100)
@@ -30,7 +28,7 @@ def main():
         (root/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     try:
         for index in range((args.rounds+args.segment-1)//args.segment):
-            command=[sys.executable,str(ROOT / 'autoforge' / 'iterate.py'),'--rounds',str(args.rounds),'--checkpoint-every',str(args.segment),
+            command=[sys.executable,str(Path(iterate.__file__)),'--rounds',str(args.rounds),'--checkpoint-every',str(args.segment),
                      '--max-new-rounds',str(args.segment),'--timeout','600','--output' if index==0 else '--resume',str(run)]
             begin=time.monotonic()
             with (root/f'{index:04}.stdout.txt').open('wb') as out,(root/f'{index:04}.stderr.txt').open('wb') as err:
@@ -53,6 +51,4 @@ def main():
     except BaseException as exc:
         report['status']='FAIL';report['error']=repr(exc);save();raise
     finally:print('Evidence:',root/'report.json',flush=True)
-
-
 if __name__=='__main__':main()

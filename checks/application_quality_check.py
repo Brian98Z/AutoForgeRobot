@@ -6,7 +6,6 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 
 import hashlib, json
 import application_quality as quality
-
 CATS=sorted(quality.CATEGORIES)
 def record(digest,c,status='PASS',value=1,unit='observation'):
     return quality.seal_record({'schema':1,'candidate_sha256':digest,'category':c,'status':status,'value':value,'unit':unit,'source':'check-harness:authored-evidence'})

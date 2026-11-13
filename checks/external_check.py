@@ -11,10 +11,8 @@ import subprocess
 import sys
 import uuid
 import external_evaluation as external
-
+import external_fit
 ROOT=Path(__file__).resolve().parents[1]
-
-
 def main():
     root=ROOT/'bootstrap-runs'/('external-check-'+uuid.uuid4().hex[:12]);root.mkdir(parents=True)
     state=root/'state';exe=ROOT/'target/release/autoforge.exe'
@@ -33,7 +31,7 @@ def main():
         cli('init',state);release=cli('evolve',state,ROOT/'examples/add.json')['release']
         for name,rows in [('fit',[{'input':[3,4],'expected':7},{'input':[-2,1],'expected':-1}]),('regression',[{'input':[0,0],'expected':0}]),('wrong',[{'input':[0,0],'expected':1}])]:
             (root/(name+'.json')).write_text(json.dumps(rows),encoding='utf-8')
-        command=[sys.executable,str(ROOT / 'autoforge' / 'external_fit.py'),'--fit',str(root/'fit.json'),'--regression',str(root/'regression.json')]
+        command=[sys.executable,str(Path(external_fit.__file__)),'--fit',str(root/'fit.json'),'--regression',str(root/'regression.json')]
         good=external.evaluate(ROOT,state,ROOT/'examples/add.json',release,root/'receipts',command,30)
         assert good['status']=='PASS' and good['response']['metrics']['fit_mae']==0,good
         passed('actual-candidate-fitting-and-regression-pass')
@@ -64,6 +62,4 @@ def main():
     finally:
         (root/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
         print('Evidence:',root/'report.json',flush=True)
-
-
 if __name__=='__main__':main()

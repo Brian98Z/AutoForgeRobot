@@ -7,10 +7,10 @@ remains authoritative for promotion; runner checkpoints only orchestrate/reconci
 from __future__ import annotations
 import argparse, hashlib, json, os, re, subprocess, sys, time, traceback, uuid
 from pathlib import Path
-import bootstrap, recovery, external_evaluation, repair_protocol
+import bootstrap, recovery, external_evaluation, repair_protocol, paths
 from universal.machine import _atomic_create
 PROJECT = Path(__file__).resolve().parents[1]
-EXE = PROJECT / "target" / "release" / "autoforge.exe"
+EXE = paths.release_binary(PROJECT)
 DEFAULT_SEED = 0xA170
 
 def canonical(obj):
@@ -20,14 +20,14 @@ def contract_bytes(task):
 def digest(data): return hashlib.sha256(data).hexdigest()
 def file_digest(path): return digest(path.read_bytes())
 def source_hashes():
-    paths = [Path(__file__), PROJECT / 'autoforge' / 'bootstrap.py', PROJECT / 'autoforge' / 'recovery.py', EXE, PROJECT/'Cargo.lock',
+    sources = [Path(__file__), PROJECT/'bootstrap.py', PROJECT/'recovery.py', EXE, PROJECT/'Cargo.lock',
              PROJECT/'src/main.rs',PROJECT/'src/persistence.rs',PROJECT/'src/sandbox.rs',
              PROJECT/'providers/python_agent.py',PROJECT/'providers/julia_agent.jl',PROJECT/'providers/protocol.jl',
              PROJECT/'providers/Manifest.toml',PROJECT/'universal/machine.py',
-             PROJECT / 'autoforge' / 'external_evaluation.py',PROJECT / 'autoforge' / 'external_fit.py',PROJECT / 'autoforge' / 'repair_protocol.py']
-    julia = PROJECT/"runtime/julia-1.13.3/bin/julia.exe"
-    if julia.is_file(): paths.append(julia)
-    return {p.relative_to(PROJECT).as_posix(): file_digest(p) for p in paths if p.is_file()}
+             PROJECT/'external_evaluation.py',PROJECT/'external_fit.py',PROJECT/'repair_protocol.py']
+    julia = paths.julia_binary(PROJECT)
+    if julia.is_file(): sources.append(julia)
+    return {p.relative_to(PROJECT).as_posix(): file_digest(p) for p in sources if p.is_file()}
 
 def task_defs(spec):
     if spec is None: return bootstrap.functions()
@@ -65,7 +65,7 @@ class Runner:
         for k in tuple(self.env):
             if k.startswith("AUTOFORGE_"): self.env.pop(k)
         self.env.update(AUTOFORGE_PROJECT=str(PROJECT),AUTOFORGE_PROVIDER="offline",AUTOFORGE_PYTHON=sys.executable)
-        julia=PROJECT/"runtime/julia-1.13.3/bin/julia.exe"
+        julia=paths.julia_binary(PROJECT)
         if julia.is_file(): self.env["AUTOFORGE_JULIA"]=str(julia)
     def call(self,*args,expected=0):
         cmd=[str(EXE),*(str(a) for a in args)]

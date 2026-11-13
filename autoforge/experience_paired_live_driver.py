@@ -35,7 +35,7 @@ def digest(path: Path) -> str:
 def run_validator(snapshot: Path, contract: Path, dest: Path) -> dict:
     manifest = json.loads((snapshot / "manifest.json").read_text(encoding="utf-8"))
     envelope = {"schema": 1, "workspace_manifest": manifest, "candidate_sha256": manifest.get("candidate_sha256")}
-    proc = subprocess.run([sys.executable, str(ROOT / "autoforge" / "application_builder.py"), "--engine", "docker", "--image", IMAGE, "--contract", str(contract)], input=json.dumps(envelope), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=90, check=False)
+    proc = subprocess.run([sys.executable, str(ROOT / "application_builder.py"), "--engine", "docker", "--image", IMAGE, "--contract", str(contract)], input=json.dumps(envelope), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=90, check=False)
     if proc.returncode != 0: raise RuntimeError(f"current isolated validation failed to run: {proc.stderr.strip()[:500]}")
     report = json.loads(proc.stdout)
     dest.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -129,7 +129,7 @@ def main() -> int:
     before_ref = {"package_id": before_ingest["package_id"], "path": before_entry["path"], "sha256": before_entry["sha256"], "permission": "inspect"}
     after_ref = {"package_id": after_ingest["package_id"], "path": after_entry["path"], "sha256": after_entry["sha256"], "permission": "inspect"}
     evidence = {"schema": 1, "status": "PASS", "stage": "validation", "independent": True,
-                "validator_id": f"current-container-revalidation:{digest(ROOT / 'autoforge' / 'application_builder.py')}",
+                "validator_id": f"current-container-revalidation:{digest(ROOT / 'application_builder.py')}",
                 "before_sha256": before_ref["sha256"], "after_sha256": after_ref["sha256"],
                 "environment": env, "contract_sha256": digest(validation_contract),
                 "before_report_sha256": digest(out / "before-validation.json"),
@@ -216,7 +216,7 @@ def main() -> int:
             request_goal += "\n\nPublic verified-experience provenance: id=" + summary["experience_id"] + "; digest=" + summary["experience_sha256"] + "; tags=" + ",".join(summary["problem_tags"]) + "; environment_sha256=" + summary["environment_sha256"] + "."
         request.write_text(json.dumps({"schema": 1, "goal": request_goal, "references": refs}, ensure_ascii=False), encoding="utf-8")
         session = work / "session"
-        cmd = [sys.executable, str(ROOT / "autoforge" / "application_build.py"), "run", "--request", str(request), "--contract", str(out / "contract.json"), "--reference-store", str(store), "--engine", "docker", "--image", IMAGE, "--output", str(session), "--mode", "agent", "--max-turns", "12", "--token-budget", "500000", "--time-budget", "240", "--tool-budget", "48", "--allow-model", "--trusted-adapter"]
+        cmd = [sys.executable, str(ROOT / "application_build.py"), "run", "--request", str(request), "--contract", str(out / "contract.json"), "--reference-store", str(store), "--engine", "docker", "--image", IMAGE, "--output", str(session), "--mode", "agent", "--max-turns", "12", "--token-budget", "500000", "--time-budget", "240", "--tool-budget", "48", "--allow-model", "--trusted-adapter"]
         if task_project:
             cmd += ["--project", str(task_project)]
         if digest(out / "contract.json") != contract_sha or any(digest(task_project / name) != value for name, value in starter_files.items()):

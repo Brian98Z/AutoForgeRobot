@@ -19,8 +19,10 @@ import traceback
 import uuid
 from typing import Callable
 
+import paths
+
 PROJECT = pathlib.Path(__file__).resolve().parents[1]
-EXE = PROJECT / "target" / "release" / "autoforge.exe"
+EXE = paths.release_binary(PROJECT)
 I64_MIN = -(1 << 63)
 I64_MAX = (1 << 63) - 1
 MASK = (1 << 64) - 1
@@ -187,7 +189,7 @@ class Harness:
         if not EXE.is_file():
             raise FileNotFoundError(f"release executable missing: {EXE}")
         self.report["executable_sha256"] = hashlib.sha256(EXE.read_bytes()).hexdigest()
-        julia = PROJECT / "runtime" / "julia-1.13.3" / "bin" / "julia.exe"
+        julia = paths.julia_binary(PROJECT)
         if julia.is_file():
             self.env["AUTOFORGE_JULIA"] = str(julia)
             self.report["julia_executable"] = str(julia)

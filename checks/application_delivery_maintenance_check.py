@@ -14,14 +14,10 @@ import application_checkpoint as checkpoint
 import application_delivery as delivery
 import application_delivery_maintenance as maintenance
 import applications
-
-
 def reject(fn):
     try: fn()
     except delivery.DeliveryRefused: return
     raise AssertionError('unsafe maintenance action accepted')
-
-
 def main():
     with tempfile.TemporaryDirectory(prefix='maintenance-check-') as td:
         root = Path(td); candidate = root / 'candidate'
@@ -122,6 +118,4 @@ def main():
         reject(lambda: maintenance.diagnose(session))
         assert pending.read_bytes() == before[pending.name] and mirror.read_bytes() == before[mirror.name]
     print(json.dumps({'status': 'PASS', 'scope': 'real filesystem export/diagnosis; no candidate execution', 'checks': ['byte-exact export', 'recursive/existing export refused', 'sealed runtime binding', 'diagnosis never repairs pending mirror', 'inflight/unknown version/digest tamper denied']}))
-
-
 if __name__ == '__main__': main()

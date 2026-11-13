@@ -1,0 +1,58 @@
+name: autoforge
+
+services:
+  docker:
+    image: docker:27-dind
+    privileged: true
+    command: ["--tls=false", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    volumes:
+      - docker-data:/var/lib/docker
+      - work:/workspace
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+    restart: unless-stopped
+
+  autoforge:
+    image: autoforge:0.1.0-linux
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    # Reap orphaned adapter processes: without an init, PID 1 does not reap children and
+    # terminated adapter zombies make post-SIGKILL liveness checks fail.
+    init: true
+    depends_on:
+      docker:
+        condition: service_healthy
+    environment:
+      DOCKER_HOST: tcp://docker:2375
+      # Expose the host model on this container's loopback: the controller only allows
+      # plain HTTP to loopback endpoints.
+      AUTOFORGE_MODEL_FORWARD: host.docker.internal:8081
+      AUTOFORGE_API_BASE: http://127.0.0.1:8081/v1
+      AUTOFORGE_API_KEY: ""
+      AUTOFORGE_TOOL_CHOICE: auto
+      # Must equal an id listed by the served /v1/models endpoint.
+      AUTOFORGE_MODEL: '${AUTOFORGE_MODEL_ID:-local-model}'
+      AUTOFORGE_ENGINE_IMAGE: public.ecr.aws/docker/library/python:3.11-slim
+      AUTOFORGE_RUNS: /workspace/runs
+      AUTOFORGE_CYCLES: "3"
+      # Staging dirs are bind-mount sources for the candidate engine; /tmp here is invisible
+      # to the sidecar daemon.
+      TMPDIR: /workspace/tmp
+      AUTOFORGE_WORKSPACE_COPY: /workspace/autoforge
+    working_dir: /workspace/autoforge
+    volumes:
+      - work:/workspace
+    # Keep-alive workbench: drive cycles with `docker compose exec autoforge ...`
+    # (iterate.py stays available for an explicit autonomous run).
+    command: ["sleep", "infinity"]
+    restart: unless-stopped
+
+volumes:
+  docker-data:
+  work:

@@ -6,18 +6,13 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 
 import hashlib
 import json
-
 import agent_tools as T
-
-
 def reject(fn):
     try:
         fn()
     except (ValueError, TypeError):
         return
     raise AssertionError("expected rejection")
-
-
 def run():
     reject(lambda: T.validate_arguments("list_files", '{"x":1,"x":2}'))
     reject(lambda: T.validate_arguments("list_files", '{"x":NaN}'))
@@ -60,7 +55,4 @@ def run():
     assert T.tool_class("validate") == "external"
     assert {T.tool_class("list_files"), T.tool_class("write_file")} == {"read", "idempotent_write"}
     print(json.dumps({"status": "PASS", "checks": ["strict-json-schema", "unicode-character-mutation-boundary", "oversized-batch-atomic", "empty-edit-needle-refused", "stale-batch-is-atomic", "ambiguous-edit-refused", "reference-scope-immutable", "core-protected", "resume-tool-classes"]}, sort_keys=True))
-
-
-
 if __name__ == "__main__": run()

@@ -10,10 +10,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import uuid
-
 ROOT=Path(__file__).resolve().parents[1]
-
-
 def main():
     root=ROOT/'bootstrap-runs'/('transactions-'+uuid.uuid4().hex[:12]);root.mkdir(parents=True)
     exe=ROOT/'target/release/autoforge.exe'
@@ -87,6 +84,4 @@ def main():
     finally:
         (root/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
         print('Evidence:',root/'report.json',flush=True)
-
-
 if __name__=='__main__':main()

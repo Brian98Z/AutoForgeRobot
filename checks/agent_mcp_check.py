@@ -10,9 +10,8 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "autoforge"))
 import agent_mcp as mcp
-
 SERVER = r'''
 import json, sys, time
 def send(obj):
@@ -43,14 +42,12 @@ for line in sys.stdin:
         else:
             send({"jsonrpc": "2.0", "id": m["id"], "error": {"code": -32601, "message": "unknown tool"}})
 '''
-
 def reject(fn):
     try:
         fn()
     except mcp.McpRefused:
         return
     raise AssertionError("expected McpRefused")
-
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix="mcp-check-") as tmp:
         server = Path(tmp) / "fake_server.py"
@@ -81,6 +78,5 @@ def main() -> None:
         assert s.proc is None
         print(f"agent_mcp_check: PASS (tools/list, namespaced call, notification skip, bounds, "
               f"timeout {elapsed:.2f}s, shell/env refusal, process cleanup)")
-
 if __name__ == "__main__":
     main()

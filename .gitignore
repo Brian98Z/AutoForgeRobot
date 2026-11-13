@@ -7,3 +7,8 @@
 *.key
 __pycache__/
 .env
+/dist/
+/dist-onedir/
+/dist-linux/
+/dist-linux-onedir/
+/build/

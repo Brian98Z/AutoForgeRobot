@@ -8,12 +8,10 @@ import tempfile, time
 from pathlib import Path
 import application_data_policy as P
 import application_policy as capabilities
-
 def reject(fn):
     try:fn()
     except (ValueError,TypeError):return
     raise AssertionError("expected data-policy refusal")
-
 def main():
     d=P.disclose(endpoint="https://api.example.test/v1",configured_endpoint="https://api.example.test/v1",sensitivity="confidential",max_sensitivity="confidential",value={"Authorization":"Bearer x","nested":{"password":"p"},"ok":1},max_bytes=1024)
     assert d["payload"]=={"Authorization":"[REDACTED]","nested":{"password":"[REDACTED]"},"ok":1}

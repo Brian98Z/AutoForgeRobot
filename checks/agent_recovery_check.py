@@ -1,5 +1,4 @@
 """Process-level crash/recovery checks for agent_runtime; no candidate code is executed.
-
 The model endpoint is an in-process loopback HTTP/SSE simulator. The trusted builder
 adapter is generated in a temporary directory and only parses candidate Python with
 ast.parse. Test-only worker instrumentation injects process death/control timing without
@@ -21,9 +20,7 @@ import tempfile
 import threading
 import time
 from typing import Any
-
 import agent_session
-
 ROOT = Path(__file__).resolve().parents[1]
 WAIT_SECONDS = 12.0
 WORKER_TIMEOUT = 18.0
@@ -31,31 +28,22 @@ GOAL = "durable process recovery protocol check"
 SOURCE = "value = 1\n"
 _CHILDREN: list[subprocess.Popen] = []
 _ADAPTERS: list[tuple[Path, Path]] = []
-
-
 def _check(condition: Any, message: str) -> None:
     if not condition:
         raise AssertionError(message)
-
-
 def _tool_call(name: str, args: dict, call_id: str) -> dict:
     return {"id": call_id, "type": "function",
             "function": {"name": name, "arguments": json.dumps(args, separators=(",", ":"))}}
-
-
 def _tool_response(*calls: dict) -> list[dict]:
     fragments = [{"index": index, "id": call["id"], "type": "function",
                   "function": call["function"]} for index, call in enumerate(calls)]
     return [{"choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": fragments},
                           "finish_reason": "tool_calls"}]},
             {"choices": [], "usage": {"prompt_tokens": 20, "completion_tokens": 12, "total_tokens": 32}}]
-
-
 def _stop_response(text: str = "awaiting next instruction") -> list[dict]:
     return [{"choices": [{"index": 0, "delta": {"role": "assistant", "content": text},
                           "finish_reason": "stop"}]},
             {"choices": [], "usage": {"prompt_tokens": 20, "completion_tokens": 5, "total_tokens": 25}}]
-
 class _Scenario:
     def __init__(self, responses: list[dict], gated_indices: tuple[int, ...] = ()):
         self.responses = responses
@@ -65,29 +53,20 @@ class _Scenario:
         self.requests: list[dict] = []
         self.errors: list[str] = []
         self.lock = threading.Lock()
-
     def response_gate(self, index: int) -> threading.Event:
         return self.release.setdefault(index, threading.Event())
-
     def request_event(self, index: int) -> threading.Event:
         return self.arrived.setdefault(index, threading.Event())
-
-
 class _ProtocolServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
-
     def __init__(self, address, handler, scenarios: dict[str, _Scenario]):
         self.scenarios = scenarios
         super().__init__(address, handler)
-
-
 class _ProtocolHandler(BaseHTTPRequestHandler):
     server: _ProtocolServer
-
     def log_message(self, *_args):
         pass
-
     def do_POST(self):
         try:
             if not self.path.endswith("/chat/completions"):
@@ -130,8 +109,6 @@ class _ProtocolHandler(BaseHTTPRequestHandler):
                 self.send_error(500)
             except OSError:
                 pass
-
-
 def _write_adapter(path: Path) -> None:
     """Create a trusted test adapter whose only candidate operation is AST parsing."""
     code = '''from __future__ import annotations
@@ -142,7 +119,6 @@ import os
 from pathlib import Path
 import sys
 import time
-
 p = argparse.ArgumentParser()
 a = p.parse_args()
 log_path = Path(os.environ["RECOVERY_ADAPTER_LOG"])
@@ -181,30 +157,23 @@ with gate_path.with_suffix(gate_path.suffix + ".done").open("w", encoding="utf-8
 '''
     path.write_text(code, encoding="utf-8", newline="\n")
     _ADAPTERS.append((path, Path(path.with_suffix(path.suffix + ".done"))))
-
-
 def _worker(config: dict) -> int:
     """Run the real controller; optional monkeypatches are test-only crash gates."""
     import agent_runtime
     import agent_session as session_module
-
     crash_call = config.get("crash_after_tool_result")
     if crash_call:
         original_append = session_module.EventJournal.append
-
         def append_then_crash(journal, event):
             record = original_append(journal, event)
             if event.get("type") == "tool_result" and event.get("call_id") == crash_call:
                 os._exit(74)  # EventJournal.append has fsynced the committed event.
             return record
-
         session_module.EventJournal.append = append_then_crash
-
     response_gate = config.get("after_http_gate")
     if response_gate:
         original_complete = agent_runtime.agent_transport.complete
         gate_path = Path(response_gate)
-
         def complete_then_gate(*args, **kwargs):
             # Emulate an already-arrived response racing with a steering command.
             # Actual simulator HTTP/SSE decoding still happens in original_complete.
@@ -218,9 +187,7 @@ def _worker(config: dict) -> int:
             if not release.exists():
                 raise TimeoutError("test did not release post-HTTP gate")
             return answer
-
         agent_runtime.agent_transport.complete = complete_then_gate
-
     limits = agent_runtime.agent_budget.Limits(model_calls=4, tool_calls=8, tokens=100_000,
                                                 seconds=30.0, output_tokens=256)
     report = agent_runtime.run({"schema": 1, "goal": GOAL, "references": []}, [],
@@ -230,16 +197,12 @@ def _worker(config: dict) -> int:
     sys.stdout.write(json.dumps(report, ensure_ascii=False, sort_keys=True) + "\n")
     sys.stdout.flush()
     return 0
-
-
 def _worker_entry(config_text: str) -> int:
     try:
         return _worker(json.loads(config_text))
     except BaseException as exc:
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
         return 2
-
-
 def _environment(base: str, model: str = "recovery-simulator") -> dict[str, str]:
     env = os.environ.copy()
     env["AUTOFORGE_API_BASE"] = base
@@ -247,8 +210,6 @@ def _environment(base: str, model: str = "recovery-simulator") -> dict[str, str]
     env["AUTOFORGE_API_KEY"] = ""
     env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
     return env
-
-
 def _command(output: Path, adapter: Path, log: Path, gate: Path, base: str, *,
              resume: bool, env: dict[str, str] | None = None, **instrumentation) -> tuple[list[str], dict[str, str]]:
     config = {"output": str(output), "builder_argv": [sys.executable, str(adapter)],
@@ -259,8 +220,6 @@ def _command(output: Path, adapter: Path, log: Path, gate: Path, base: str, *,
     if env:
         worker_env.update(env)
     return [sys.executable, str(Path(__file__).resolve()), "_worker", json.dumps(config, separators=(",", ":"))], worker_env
-
-
 def _invoke(command: list[str], env: dict[str, str], *, expected: bool = True) -> dict | subprocess.CompletedProcess:
     proc = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True, timeout=WORKER_TIMEOUT)
     if expected:
@@ -270,15 +229,11 @@ def _invoke(command: list[str], env: dict[str, str], *, expected: bool = True) -
         except (IndexError, json.JSONDecodeError) as exc:
             raise AssertionError(f"worker returned no JSON report: {proc.stdout!r}; {proc.stderr!r}") from exc
     return proc
-
-
 def _start(command: list[str], env: dict[str, str]) -> subprocess.Popen:
     proc = subprocess.Popen(command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             text=True, close_fds=True)
     _CHILDREN.append(proc)
     return proc
-
-
 def _wait_file(path: Path, proc: subprocess.Popen | None = None, timeout: float = WAIT_SECONDS) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -289,8 +244,6 @@ def _wait_file(path: Path, proc: subprocess.Popen | None = None, timeout: float 
             raise AssertionError(f"worker exited before {path.name}: rc={proc.returncode}; {stderr}; {stdout}")
         time.sleep(0.02)
     raise AssertionError(f"timed out waiting for {path}")
-
-
 def _kill_pid_tree(pid: int) -> None:
     if os.name == "nt":
         subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=10)
@@ -307,8 +260,6 @@ def _kill_pid_tree(pid: int) -> None:
             return
         time.sleep(0.02)
     raise AssertionError(f"adapter process {pid} did not terminate after SIGKILL")
-
-
 def _kill(proc: subprocess.Popen) -> None:
     if proc.poll() is not None:
         return
@@ -321,16 +272,11 @@ def _kill(proc: subprocess.Popen) -> None:
         proc.stdout.close()
     if proc.stderr:
         proc.stderr.close()
-
-
 def _control(output: Path, kind: str, text: str | None, request_id: str) -> dict:
     record = agent_session._control_record(output)
     return agent_session.enqueue_control(output, record["token"], kind, text, request_id)
-
-
 def _raw_events(output: Path) -> list[dict]:
     return [json.loads(line) for line in (output / "events.jsonl").read_text(encoding="utf-8").splitlines()]
-
 def _events(output: Path) -> list[dict]:
     rows = [json.loads(line) for line in (output / "events.jsonl").read_text(encoding="utf-8").splitlines()]
     _check([row.get("seq") for row in rows] == list(range(1, len(rows) + 1)), "event sequence is not contiguous")
@@ -348,24 +294,16 @@ def _events(output: Path) -> list[dict]:
     with agent_session.EventJournal(output, resume=True) as journal:
         _check(not journal.read_after(cursor), "end cursor returned events")
     return rows
-
-
 def _tool_results(events: list[dict], call_id: str) -> list[dict]:
     return [event for event in events if event.get("type") == "tool_result" and event.get("call_id") == call_id]
-
-
 def _adapter_count(path: Path) -> int:
     if not path.exists():
         return 0
     return len(path.read_text(encoding="utf-8").splitlines())
-
-
 def _await_request(scenario: _Scenario, index: int, timeout: float = WAIT_SECONDS) -> None:
     _check(scenario.request_event(index).wait(timeout), f"HTTP simulator did not receive request {index + 1}")
     if scenario.errors:
         raise AssertionError("HTTP simulator errors: " + "; ".join(scenario.errors))
-
-
 def _test_crash_recovery(root: Path, server_base: str, scenarios: dict[str, _Scenario], adapter: Path) -> list[str]:
     checks = []
     output = root / "committed-write-crash"
@@ -378,7 +316,6 @@ def _test_crash_recovery(root: Path, server_base: str, scenarios: dict[str, _Sce
     validate_call = _tool_call("validate", {}, "validate-ambiguous")
     scenario.responses[:] = [_tool_response(builder_call, read_call, validate_call), _stop_response()]
     base = server_base + "/crash"
-
     command, env = _command(output, adapter, log, gate, base, resume=False,
                             crash_after_tool_result="write-once")
     crashed = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True,
@@ -392,7 +329,6 @@ def _test_crash_recovery(root: Path, server_base: str, scenarios: dict[str, _Sce
     candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
     _check(candidate["files"] == [{"path": "main.py", "content": SOURCE}], "committed write source differs from exact requested bytes")
     checks.append("abrupt process exit after fsynced write tool_result; committed candidate exact source")
-
     command, env = _command(output, adapter, log, gate, base, resume=True)
     resuming = _start(command, env)
     started = gate.with_suffix(gate.suffix + ".started")
@@ -407,39 +343,33 @@ def _test_crash_recovery(root: Path, server_base: str, scenarios: dict[str, _Sce
     _kill(resuming)
     _kill_pid_tree(adapter_pid)
     checks.append("resume continued pending read once and entered validate without replaying the write or model request")
-
     base_session = (output / "session.json").read_bytes()
     base_candidate = candidate_path.read_bytes()
     adapter_bytes = adapter.read_bytes()
     baseline_model_count = len(scenario.requests)
     baseline_build_count = _adapter_count(log)
-
     envelope = json.loads(base_session.decode("utf-8"))
     envelope["sha256"] = "0" * 64
     (output / "session.json").write_text(json.dumps(envelope, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
     refused = _invoke(command, env, expected=False)
     _check(refused.returncode != 0, "tampered session digest was accepted")
     (output / "session.json").write_bytes(base_session)
-
     mirror = json.loads(base_candidate.decode("utf-8"))
     mirror["files"][0]["content"] = "value = 2\n"
     candidate_path.write_text(json.dumps(mirror, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
     refused = _invoke(command, env, expected=False)
     _check(refused.returncode != 0, "tampered candidate mirror was accepted")
     candidate_path.write_bytes(base_candidate)
-
     adapter.write_bytes(adapter_bytes + b"\n# test-only tamper probe\n")
     refused = _invoke(command, env, expected=False)
     _check(refused.returncode != 0, "modified trusted adapter was accepted on resume")
     adapter.write_bytes(adapter_bytes)
-
     wrong_provider = _environment(base, model="different-model")
     refused = _invoke(command, wrong_provider, expected=False)
     _check(refused.returncode != 0, "changed provider configuration was accepted on resume")
     _check(len(scenario.requests) == baseline_model_count and _adapter_count(log) == baseline_build_count,
            "tamper probes made model or builder requests")
     checks.append("state digest, candidate mirror, trusted adapter identity, and provider configuration tampering refused")
-
     blocked = _invoke(command, env)
     _check(blocked["task_status"] == "BLOCKED" and blocked["reason_code"] == "unknown_tool_side_effect",
            f"ambiguous external validate was not blocked: {blocked}")
@@ -454,8 +384,6 @@ def _test_crash_recovery(root: Path, server_base: str, scenarios: dict[str, _Sce
     _check(not _tool_results(final_events, "validate-ambiguous"), "uncommitted validate result appeared in event journal")
     checks.append("unknown interrupted external validate is BLOCKED and never blindly replayed")
     return checks
-
-
 def _test_terminal_success(root: Path, server_base: str, scenarios: dict[str, _Scenario], adapter: Path) -> list[str]:
     output = root / "terminal-success"
     log = root / "terminal-adapter.jsonl"
@@ -475,8 +403,6 @@ def _test_terminal_success(root: Path, server_base: str, scenarios: dict[str, _S
     _check(len(scenario.requests) == 1 and _adapter_count(log) == 1, "terminal resume contacted model or builder again")
     _events(output)
     return ["terminal SUCCEEDED state resumes without extra model or builder requests"]
-
-
 def _test_idle_controls(root: Path, server_base: str, scenarios: dict[str, _Scenario], adapter: Path) -> list[str]:
     checks = []
     for kind, expected in (("stop", "CANCELLED"), ("pause", "PAUSED")):
@@ -508,8 +434,6 @@ def _test_idle_controls(root: Path, server_base: str, scenarios: dict[str, _Scen
         _check(len(scenario.requests) == 1, f"idle {kind} generated another model request")
         checks.append(f"authenticated {kind} applied while model request was idle; stale action not executed")
     return checks
-
-
 def _test_steering_stale_result(root: Path, server_base: str, scenarios: dict[str, _Scenario], adapter: Path) -> list[str]:
     output = root / "steering-stale"
     log = root / "steering-adapter.jsonl"
@@ -541,8 +465,6 @@ def _test_steering_stale_result(root: Path, server_base: str, scenarios: dict[st
     consumed = [e for e in events if e.get("type") == "control_consumed" and e.get("request_id") == "steer-once"]
     _check(len(consumed) == 1 and len(scenario.requests) == 2, "steering was not consumed once before a fresh model request")
     return ["steering during post-HTTP idle gate discards stale model result and never executes its tool call"]
-
-
 def _test_follow_up(root: Path, server_base: str, scenarios: dict[str, _Scenario], adapter: Path) -> list[str]:
     output = root / "follow-up-once"
     log = root / "follow-up-adapter.jsonl"
@@ -581,8 +503,6 @@ def _test_follow_up(root: Path, server_base: str, scenarios: dict[str, _Scenario
     _invoke(*resumed)
     _check(len(scenario.requests) == 2 and _adapter_count(log) == 2, "terminal follow-up resume repeated model or builder")
     return ["follow-up request deduplicated, consumed exactly once, and terminal resume made no extra requests"]
-
-
 def _main() -> int:
     with tempfile.TemporaryDirectory(prefix="agent-recovery-check-") as temporary:
         root = Path(temporary)
@@ -634,8 +554,6 @@ def _main() -> int:
             "excluded": ["no production container/build execution", "no business-contract behavior validation", "no external network"]},
             "checks": checks}, ensure_ascii=False, indent=2))
     return 0
-
-
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] == "_worker":
@@ -647,7 +565,5 @@ def main(argv: list[str] | None = None) -> int:
         print("agent_recovery_check.py takes no arguments", file=sys.stderr)
         return 2
     return _main()
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

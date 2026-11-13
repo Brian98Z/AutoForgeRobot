@@ -1,5 +1,4 @@
 """Run reproducible minimal Python, Node, TypeScript and Java builds in operator-prepared exact local images.
-
 Requires locally loaded Linux image IDs and an artifact-cache manifest. Never pulls images, acquires artifacts,
 or starts/stops the shared engine. Containers created by application_toolchain use disposable autoforge-toolchain-
 identifiers and are forcibly removed in the runner's finally cleanup; image IDs are never removed.
@@ -13,8 +12,6 @@ import argparse, hashlib, json, shutil, tempfile
 from pathlib import Path
 import application_dependencies as deps
 import application_toolchain as toolchain
-
-
 def _candidate(root:Path, files:dict[str,bytes])->dict:
     rows=[]
     for rel,data in sorted(files.items()):
@@ -23,7 +20,6 @@ def _candidate(root:Path, files:dict[str,bytes])->dict:
     canonical={'schema':1,'goal':'live toolchain acceptance','references':[],'files':rows}
     canonical['candidate_sha256']=hashlib.sha256(json.dumps(canonical,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
     return canonical
-
 def _run_one(base:Path,engine:str,eco:str,image:str,cache:Path,records:list,packages:list,files:dict,argv:list,repeat:bool)->dict:
     src=base/('candidate-'+eco);src.mkdir();candidate=_candidate(src,files)
     lock={'schema':1,'ecosystem':eco,'toolchain':{'name':{'python':'python','node':'node','typescript':'node','java':'java'}[eco],'version':'operator-image','container_image':image},'packages':packages}
@@ -42,7 +38,6 @@ def _run_one(base:Path,engine:str,eco:str,image:str,cache:Path,records:list,pack
         if expected not in run['observed_versions']:raise AssertionError(f'{eco} fixture did not execute expected main output')
     shutil.rmtree(out)
     return {'ecosystem':eco,'image_id':image,'status':'PASS','versions':[r['observed_versions'] for r in result['runs']],'deterministic':result['deterministic']}
-
 def main()->int:
     ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--engine',choices=('docker','podman'),default='docker');ap.add_argument('--python-image',required=True);ap.add_argument('--node-image',required=True);ap.add_argument('--java-image',required=True);ap.add_argument('--cache',type=Path,required=True);ap.add_argument('--artifacts',type=Path,required=True,help='Cache records must include TypeScript 5.9.3: registry.npmjs.org/typescript/-/typescript-5.9.3.tgz sha256 computed from bytes (official registry integrity sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==). This is compiler-only smoke; a real framework smoke additionally requires every exact registry tgz, SHA-256, license record, and dependency edge for that framework lock.');ap.add_argument('--repeat',action='store_true');a=ap.parse_args()
     images={'python':a.python_image,'node':a.node_image,'typescript':a.node_image,'java':a.java_image}

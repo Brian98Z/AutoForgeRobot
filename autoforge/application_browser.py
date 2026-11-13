@@ -5,9 +5,17 @@ import argparse, hashlib, importlib.util, json, os, re, shutil, sys, time
 from pathlib import Path
 from urllib.parse import urlsplit
 
+BROWSER_EXECUTABLES = {
+    'chromium': {'chrome', 'chrome.exe', 'chromium', 'chromium-browser', 'google-chrome',
+                 'headless_shell', 'headless_shell.exe', 'msedge', 'msedge.exe'},
+    'firefox': {'firefox', 'firefox.exe'},
+    'webkit': {'playwright', 'playwright.exe', 'minibrowser', 'minibrowser.exe'},
+}
+
+
 def discover_browser_executable():
     candidates=[]
-    for name in ('chrome','msedge'):
+    for name in ('chrome','chromium','chromium-browser','google-chrome','msedge'):
         found=shutil.which(name) or shutil.which(name+'.exe')
         if found: candidates.append(Path(found))
     roots=(os.environ.get('PROGRAMFILES'),os.environ.get('PROGRAMFILES(X86)'),os.environ.get('LOCALAPPDATA'))
@@ -15,6 +23,8 @@ def discover_browser_executable():
         if not root: continue
         base=Path(root)
         candidates.extend((base/'Google/Chrome/Application/chrome.exe',base/'Microsoft/Edge/Application/msedge.exe'))
+    candidates.extend((Path('/usr/bin/google-chrome'),Path('/usr/bin/chromium'),Path('/opt/google/chrome/chrome'),
+                       Path('/usr/bin/firefox'),Path('/snap/bin/chromium')))
     for candidate in candidates:
         try:
             if candidate.is_file(): return str(candidate.resolve())
@@ -79,7 +89,7 @@ def run(origin, digest, attestation, contract, out_dir, *, timeout=60, authorize
     if browser_engine not in {'chromium','firefox','webkit'}: raise BrowserRefused('browser_engine must be chromium, firefox, or webkit')
     if browser_executable is not None:
         executable_path=Path(browser_executable).resolve()
-        expected={'chromium':{'chrome.exe','msedge.exe'},'firefox':{'firefox.exe'},'webkit':{'playwright.exe'}}[browser_engine]
+        expected=BROWSER_EXECUTABLES[browser_engine]
         if executable_path.name.lower() not in expected or not executable_path.is_file(): raise BrowserRefused('browser executable does not match the selected Playwright engine')
         browser_executable=str(executable_path)
     try:

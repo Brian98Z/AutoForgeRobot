@@ -9,14 +9,9 @@ import json
 from pathlib import Path
 import tempfile
 from unittest.mock import patch
-
 import agent_runtime
-
-
 def _call(name: str, args: dict, call_id: str = "call") -> dict:
     return {"id": call_id, "type": "function", "function": {"name": name, "arguments": json.dumps(args, separators=(",", ":"))}}
-
-
 def main() -> None:
     request = {"schema": 1, "goal": "protocol simulation", "references": []}
     builder_argv = ["unused-trusted-builder"]
@@ -30,7 +25,6 @@ def main() -> None:
             {"role": "assistant", "content": None, "tool_calls": [_call("read_file", {"path": "main.py"}, "read-baseline"), _call("write_file", {"path": "main.py", "content": "value = 9\n", "expected_sha256": "0" * 64}, "stale"), _call("read_file", {"path": "main.py"}, "read-after-stale"), _call("write_file", {"path": "main.py", "content": "value = 2\n", "expected_sha256": hashlib.sha256(b"value = (\n").hexdigest()}, "repair")]},
             {"role": "assistant", "content": None, "tool_calls": [_call("query_validation", {}, "query-stale")]},
             {"role": "assistant", "content": None, "tool_calls": [_call("validate", {}, "validate")] }]
-
         calls = []
         def transport(messages, tools, *, on_event, should_stop, max_tokens):
             calls.append((messages, tools))
@@ -171,8 +165,5 @@ def main() -> None:
         assert noop_state['candidate'] == unchanged
         assert all(json.loads(m['content'])['changed'] is False for m in noop_state['messages'] if m.get('tool_call_id', '').startswith('unchanged-'))
         print(json.dumps({"status": "PASS", "scope": "protocol simulation; builder stub is AST-only, not real runtime/business acceptance", "checks": ["baseline required before existing-file mutation", "validation FAIL permits repair", "exact repaired candidate validated PASS", "premature model stop is HOLD", "event log and final report persisted", "unchanged writes stop as repeated no progress"]}, ensure_ascii=False))
-
-
-
 if __name__ == "__main__":
     main()

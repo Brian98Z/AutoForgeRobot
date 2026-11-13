@@ -7,12 +7,10 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 import json, os, subprocess, sys, tempfile, time
 from pathlib import Path
 import agent_session as S
-
 def reject(fn):
     try:fn()
     except (ValueError, OSError):return
     raise AssertionError("expected authorization refusal")
-
 def main():
   with tempfile.TemporaryDirectory(prefix="agent-control-") as td:
     root=Path(td);a=root/"a";b=root/"b";a.mkdir();b.mkdir()

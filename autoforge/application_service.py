@@ -5,6 +5,7 @@ import argparse, hashlib, http.client, json, os, re, signal, socket, subprocess,
 from pathlib import Path
 from typing import Any
 import application_builder
+import container_env
 
 MAX_LOG=262144
 MAX_BODY=1048576
@@ -12,14 +13,14 @@ MAX_BODY=1048576
 class ServiceFailure(ValueError): pass
 
 def _run(argv: list[str], timeout: int=15) -> bytes:
-    try: p=subprocess.run(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout,check=False,env={'PATH':os.environ.get('PATH','')},close_fds=True)
+    try: p=subprocess.run(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout,check=False,env=container_env.engine_env(),close_fds=True)
     except (FileNotFoundError, subprocess.TimeoutExpired) as e: raise ServiceFailure(f'container command unavailable or timed out: {argv[0]}') from e
     if p.returncode: raise ServiceFailure(f'container command failed ({argv[0]}): {p.stderr[:2048].decode("utf-8","replace")}')
     if len(p.stdout)>65536: raise ServiceFailure('container response exceeded limit')
     return p.stdout
 def _bounded_logs(engine:str,name:str)->str:
     try:
-        proc=subprocess.Popen([engine,'logs','--tail','500',name],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env={'PATH':os.environ.get('PATH','')},close_fds=True)
+        proc=subprocess.Popen([engine,'logs','--tail','500',name],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env=container_env.engine_env(),close_fds=True)
     except OSError: return ''
     data=bytearray(); overflow=False
     def drain()->None:
@@ -139,9 +140,9 @@ def run(manifest: Any, contract_raw: Any, engine: str, image: str, command: list
             bootstrap="import os,sys; mounts=__MOUNTS__; dst='/run/autoforge/secrets'; os.makedirs(dst,mode=0o700,exist_ok=True);\nif os.stat('/state').st_uid==0:\n os.chmod('/state',0o700); os.chown('/state',65534,65534)\nfor name,src in mounts:\n data=open(src,'rb').read(); fd=os.open(dst+'/'+name,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o400); os.write(fd,data); os.close(fd); os.chown(dst+'/'+name,65534,65534)\nos.chmod(dst,0o500); os.chown(dst,65534,65534); os.setgid(65534); os.setuid(65534); os.execvp(sys.argv[1],sys.argv[1:])".replace('__MOUNTS__',repr(mounts))
             entrypoint=['python','-I','-c',bootstrap,*command]
         else: entrypoint=command
-        argv=[engine,'run','-d','--name',name,'--network=none','--read-only','--user=0:0' if mounts else '--user=65534:65534','--cap-drop=ALL',*( ['--cap-add=CHOWN','--cap-add=SETUID','--cap-add=SETGID','--cap-add=DAC_READ_SEARCH'] if mounts else [] ),'--security-opt=no-new-privileges','--pids-limit=64','--memory=256m','--cpus=1','--mount',f'type=bind,src={root},dst=/candidate,readonly',*secret_args,'--mount',f'type=volume,src={volume},dst=/state','--tmpfs','/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777','--tmpfs','/run/autoforge:rw,noexec,nosuid,nodev,size=1m,mode=1777','--workdir','/candidate','--entrypoint',entrypoint[0],image,*entrypoint[1:]]
+        argv=[engine,'run','-d','--init','--name',name,'--network=none','--read-only','--user=0:0' if mounts else '--user=65534:65534','--cap-drop=ALL',*( ['--cap-add=CHOWN','--cap-add=SETUID','--cap-add=SETGID','--cap-add=DAC_READ_SEARCH'] if mounts else [] ),'--security-opt=no-new-privileges','--pids-limit=64','--memory=256m','--cpus=1','--mount',f'type=bind,src={root},dst=/candidate,readonly',*secret_args,'--mount',f'type=volume,src={volume},dst=/state','--tmpfs','/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777','--tmpfs','/run/autoforge:rw,noexec,nosuid,nodev,size=1m,mode=1777','--workdir','/candidate','--entrypoint',entrypoint[0],image,*entrypoint[1:]]
         cid=_run(argv).decode().strip()
-        tunnel=Tunnel(engine,cid,{'PATH':os.environ.get('PATH','')})
+        tunnel=Tunnel(engine,cid,container_env.engine_env())
         port=tunnel.port; deadline=time.monotonic()+timeout; ready=False
         while time.monotonic()<deadline:
             if application_builder.STOP_REQUESTED: raise ServiceFailure('service run stopped')
@@ -259,7 +260,7 @@ print(json.dumps({"schema":1,"cpu_usage_usec":stat["usage_usec"],"user_cpu_usec"
             except Exception:pass
         try: _bounded_logs(engine,name)
         except Exception: pass
-        try: subprocess.run([engine,'rm','-f',name],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10,check=False,env={'PATH':os.environ.get('PATH','')},close_fds=True)
+        try: subprocess.run([engine,'rm','-f',name],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10,check=False,env=container_env.engine_env(),close_fds=True)
         except Exception: pass
         if volume_created:
             try: _run([engine,'volume','rm',volume],timeout=10)

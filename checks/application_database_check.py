@@ -8,7 +8,6 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 import argparse,json,sqlite3,sys
 from pathlib import Path
 import application_builder, application_database as db
-
 def main()->int:
     p=argparse.ArgumentParser(description=__doc__); p.add_argument('--sqlite-test-db',type=Path); p.add_argument('--migration',type=Path); p.add_argument('--rollback',type=Path); p.add_argument('--self-check-db',type=Path); p.add_argument('--engine',choices=('docker','podman')); p.add_argument('--image'); p.add_argument('--expected-version',type=int); p.add_argument('--target-version',type=int); a=p.parse_args()
     versioned=a.expected_version is not None or a.target_version is not None

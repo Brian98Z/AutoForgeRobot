@@ -1,5 +1,4 @@
 """Filesystem-backed acceptance checks for local delivery lifecycle boundaries.
-
 Run: python checks/application_delivery_check.py. This does not claim an actual
  deployment runtime was exercised; health adapter tests use trusted local argv.
 """
@@ -12,7 +11,6 @@ import json, tempfile, shutil
 from pathlib import Path
 import applications
 import application_delivery as delivery
-
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix='autoforge-delivery-check-') as td:
         base=Path(td); candidate=base/'candidate'
@@ -68,5 +66,4 @@ def main() -> None:
         reconciled=delivery.reconcile(root,'crash-1',{'request_id':'crash-1','observed_state':'not_executed','evidence_id':'operator-reconciliation-1'})
         assert reconciled['state']=='reconciled_not_executed'
         print(json.dumps({'status':'PASS','checks':['filesystem pack/import','exact digest evidence','tamper detection','authorization denial','trusted adapter promotion','health-failure rollback','request replay refusal','crash ambiguity reconciliation'],'deployment_runtime':'NOT_TESTED'}))
-
 if __name__=='__main__': main()

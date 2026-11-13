@@ -9,7 +9,7 @@ from pathlib import Path
 import agent_budget,agent_runtime,agent_session
 ROOT=Path(__file__).resolve().parents[1]
 MODULES=ROOT/'autoforge'
-IMAGE='sha256:673719e071ecf27434fd2635bbd8d00f49f4fdd81f243143438a42ced8bedf60'
+IMAGE=os.environ.get('AUTOFORGE_RECOVERY_IMAGE') or 'sha256:673719e071ecf27434fd2635bbd8d00f49f4fdd81f243143438a42ced8bedf60'
 def worker(output,resume=False):
     request=json.loads((output/'request.json').read_text(encoding='utf-8'))
     initial=json.loads((output/'initial.json').read_text(encoding='utf-8'))
@@ -19,14 +19,14 @@ def worker(output,resume=False):
 def main():
     p=argparse.ArgumentParser();p.add_argument('--worker',type=Path);p.add_argument('--resume',action='store_true');a=p.parse_args()
     if a.worker:return worker(a.worker,a.resume)
-    out=ROOT/'bootstrap-runs'/('container-recovery-live-'+uuid.uuid4().hex);out.mkdir()
+    out=ROOT/'bootstrap-runs'/('container-recovery-live-'+uuid.uuid4().hex);out.mkdir(parents=True)
     request={'schema':1,'goal':'Repair the existing JSON-lines double-integer program: for each input {value:integer} return {double:2*value}, preserving its two-second work delay. Validate the existing program first, inspect its actual independent feedback, then make a local repair and validate. Preserve sentinel.txt. Do not remove the delay.','references':[]}
     source='import json,sys,time\nfor line in sys.stdin:\n x=json.loads(line);time.sleep(2);print(json.dumps({"double":3*x["value"]}),flush=True)\n'
     initial={'schema':1,'goal':request['goal'],'references':[],'files':[{'path':'main.py','content':source},{'path':'sentinel.txt','content':'unrelated user work must survive\n'}]}
     contract={'schema':1,'entrypoint':'main.py','scenarios':[{'name':'signed-integers','requests':[{'value':2},{'value':-3}],'expected':[{'double':4},{'double':-6}]}]}
     for n,v in [('request',request),('initial',initial),('contract',contract)]: (out/(n+'.json')).write_text(json.dumps(v,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     cmd=[sys.executable,str(Path(__file__).resolve()),'--worker',str(out)]
-    start=time.monotonic();observed=None;pause_time=None
+    start=time.monotonic();observed=None;pause_time=None;seen=[]
     with (out/'worker.stdout').open('wb') as stdout,(out/'worker.stderr').open('wb') as stderr:
         proc=subprocess.Popen(cmd,cwd=ROOT,stdout=stdout,stderr=stderr)
         try:
@@ -37,6 +37,10 @@ def main():
                     if not item.get('Names','').startswith('autoforge-'):continue
                     inspect=json.loads(subprocess.check_output(['docker','inspect',item['ID']],timeout=5))[0]
                     mounts=inspect.get('Mounts',[])
+                    if len(seen)<40:
+                        seen.append({'name':inspect['Name'],'running':inspect['State']['Running'],
+                                     'sources':[m.get('Source') for m in mounts],
+                                     'destinations':[m.get('Destination') for m in mounts]})
                     if any(str(out/'session'/'revisions').replace('\\','/').casefold() in m.get('Source','').replace('\\','/').casefold() for m in mounts):
                         observed={'id':inspect['Id'],'name':inspect['Name'],'image':inspect['Image'],'running':inspect['State']['Running'],'mounts':[{'source':m['Source'],'destination':m['Destination'],'rw':m['RW']} for m in mounts]}
                         token=json.loads((out/'session'/'.control.json').read_text())['token'];agent_session.enqueue_control(out/'session',token,'pause',request_id='pause-running-container')
@@ -69,6 +73,6 @@ def main():
         continued=subprocess.run(cmd+['--resume'],capture_output=True,text=True,timeout=180,cwd=ROOT)
         finished=agent_session.load(out/'session')
     intact=finished is not None and next(f['content'] for f in finished['candidate']['files'] if f['path']=='sentinel.txt')=='unrelated user work must survive\n'
-    evidence={'schema':1,'scope':'Real model and exact-image container pause, unknown refusal, explicit operator reconciliation, resumed repair and independent acceptance.','observed_container':observed,'container_absent_after_cleanup':gone,'pause_return_seconds':pause_latency,'paused':before,'blocked':blocked,'reconciliation':receipt,'finished':None if finished is None else {'status':finished['task_status'],'reason':finished['reason_code'],'budget':finished['budget']},'sentinel_intact':intact,'resume_exit':resumed.returncode,'resume_stdout':resumed.stdout,'status':'PASS' if observed and gone and blocked['reason']=='unknown_tool_side_effect' and blocked['model_calls']==before['model_calls'] and blocked['tools']==before['tools'] and intact and finished['task_status']=='SUCCEEDED' else 'HOLD','limitations':['Explicit reconciliation limited to built-in disposable network-none JSONL validation, never arbitrary side effects.','Public delay fixture is not the inventory business target.']}
+    evidence={'schema':1,'scope':'Real model and exact-image container pause, unknown refusal, explicit operator reconciliation, resumed repair and independent acceptance.','observed_container':observed,'container_absent_after_cleanup':gone,'pause_return_seconds':pause_latency,'paused':before,'blocked':blocked,'reconciliation':receipt,'finished':None if finished is None else {'status':finished['task_status'],'reason':finished['reason_code'],'budget':finished['budget']},'containers_seen':seen,'sentinel_intact':intact,'resume_exit':resumed.returncode,'resume_stdout':resumed.stdout,'status':'PASS' if observed and gone and blocked['reason']=='unknown_tool_side_effect' and blocked['model_calls']==before['model_calls'] and blocked['tools']==before['tools'] and intact and finished['task_status']=='SUCCEEDED' else 'HOLD','limitations':['Explicit reconciliation limited to built-in disposable network-none JSONL validation, never arbitrary side effects.','Public delay fixture is not the inventory business target.']}
     (out/'verification.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2)+'\n',encoding='utf-8');print(json.dumps({'status':evidence['status'],'report':str(out/'verification.json')}));return 0 if evidence['status']=='PASS' else 2
 if __name__=='__main__':raise SystemExit(main())

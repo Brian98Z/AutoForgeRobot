@@ -9,7 +9,6 @@ from pathlib import Path
 import application_dependencies as deps
 import application_toolchain as toolchain
 import application_service
-
 ROOT=Path(__file__).resolve().parents[1]
 RUNS=ROOT/'bootstrap-runs'
 FRAME=RUNS/'frontend-framework-20261104'
@@ -17,7 +16,6 @@ BACKEND=RUNS/'generated-web-extended-ce8932caad84'/'candidate'
 CACHE=FRAME/'cache'
 PREACT='3ee2f67884ecaad0652a3bb75d1b6734518dc276f0af653e9fb2d24bfc441c27'
 TYPESCRIPT='10e108c9cf7d5f2879053dff18515fb405abf2ccef63eaaf017d9c571687a1d3'
-
 def sha(data:bytes)->str:return hashlib.sha256(data).hexdigest()
 def file_manifest(root:Path,goal:str)->dict:
     rows=[]
@@ -29,7 +27,6 @@ def file_manifest(root:Path,goal:str)->dict:
     m['candidate_sha256']=sha(json.dumps(canonical,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode())
     (root/'manifest.json').write_text(json.dumps(m,sort_keys=True,indent=2)+'\n',encoding='utf8')
     return m
-
 def main()->int:
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--engine',choices=('docker','podman'),default='docker')

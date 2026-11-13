@@ -9,7 +9,6 @@ import argparse, hashlib, json, random, sys, time
 from pathlib import Path
 import application_builder as builder
 import applications
-
 ROOT=Path(__file__).resolve().parents[1]
 MANIFEST=ROOT/'fixtures/benchmark/tasks.json'
 LOCK=ROOT/'fixtures/benchmark/lock.json'
@@ -57,7 +56,6 @@ def scenarios(task_id,seed,count):
         alphabet=['a','\n','λ','🙂',' '];cases += [{'op':'render','title':''.join(rng.choice(alphabet) for _ in range(rng.randrange(8))),'body':''.join(rng.choice(alphabet) for _ in range(rng.randrange(16)))} for _ in range(count)];cases.append({'op':'render','title':'ok','body':'continues'})
     else:raise ValueError('unknown task id')
     return cases
-
 def run(task_ids,engine,image,outdir,seed,count,repetitions,candidate_overrides=None):
     candidates = dict(DEFAULT_CANDIDATES)
     for task_id, path in (candidate_overrides or {}).items():

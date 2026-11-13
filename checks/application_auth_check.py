@@ -9,7 +9,6 @@ from pathlib import Path
 import application_auth as auth
 import json, threading, http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
 def http_check(store,now):
  class Handler(BaseHTTPRequestHandler):
   def log_message(self,*args):pass
@@ -40,7 +39,6 @@ def http_check(store,now):
   token,_=store.create('http-expiring','tenant-A',['reader'],ttl_seconds=1)
   now[0]+=1;assert request('/tenant-A/read',token)==401
  finally:server.shutdown();server.server_close();worker.join(timeout=3)
-
 def main():
  with tempfile.TemporaryDirectory(prefix='auth-check-') as td:
   record=auth.hash_password('correct horse battery staple')

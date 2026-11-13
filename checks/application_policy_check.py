@@ -5,16 +5,12 @@ from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 
 import application_policy as P
-
-
 def reject(fn):
     try:
         fn()
     except (ValueError, TypeError):
         return
     raise AssertionError("expected rejection")
-
-
 def run():
     cap = P.grant("session-a", ["read_file", "write_file"], ttl_seconds=30)
     P.authorize(cap, "session-a", "read_file")
@@ -53,7 +49,5 @@ def run():
     assert promoted["artifact"]["approval"]["approved_by"] == "operator"
     reject(lambda: P.check_candidate_path("src/../fixtures/business/contract.json"))
     print('{"status":"PASS","checks":["session-tool-scope","revocation","provider-and-source-scope","core-and-sensitive-paths","product-names-allowed","staged-product-and-strategy-separation","strategy-isolation-and-external-promotion"]}')
-
-
 if __name__ == "__main__":
     run()

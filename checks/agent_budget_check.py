@@ -6,8 +6,6 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 from dataclasses import replace
 import json
 import agent_budget as b
-
-
 def refused(fn, code):
     try:
         fn()
@@ -15,8 +13,6 @@ def refused(fn, code):
         assert str(exc) == code, (code, str(exc))
     else:
         raise AssertionError(code)
-
-
 def main():
     messages = [{'role': 'user', 'content': '中文'}]
     limits = b.Limits(model_calls=1, tool_calls=1)
@@ -38,7 +34,5 @@ def main():
     expired = b.Budget(limits, {**budget.snapshot(), 'elapsed_seconds': limits.seconds})
     refused(expired.reserve_tool, 'wall_time_budget')
     print(json.dumps({'status': 'PASS', 'scope': 'conservative resource reservations and checkpoint preservation; not billing proof'}))
-
-
 if __name__ == '__main__':
     main()

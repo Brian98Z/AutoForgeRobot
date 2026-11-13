@@ -7,9 +7,9 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 
 import hashlib,json,sys,tempfile
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "autoforge"))
 import application_learning as L
 import references
-
 def reject(fn):
     try: fn()
     except (L.LearningRefused,ValueError): return

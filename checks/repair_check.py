@@ -11,17 +11,15 @@ import sys
 import uuid
 import iterate
 import repair_protocol
-
+import external_fit
 ROOT=Path(__file__).resolve().parents[1]
-
-
 def main():
     root=ROOT/'bootstrap-runs'/('repair-check-'+uuid.uuid4().hex[:12]);root.mkdir(parents=True)
     task={'schema':1,'id':'ambiguous','goal':'infer intended arithmetic','public_cases':[{'input':[0,0],'expected':0},{'input':[2,2],'expected':4}], 'holdout_cases':[{'input':[0,0],'expected':0}], 'max_rounds':2}
     taskfile=root/'tasks.json';taskfile.write_text(json.dumps([task]),encoding='utf-8')
     fit=root/'fit.json';fit.write_text(json.dumps([{'input':[3,4],'expected':12},{'input':[5,6],'expected':30}]),encoding='utf-8')
     regression=root/'regression.json';regression.write_text(json.dumps([{'input':[2,2],'expected':4}]),encoding='utf-8')
-    command=[sys.executable,str(ROOT / 'autoforge' / 'external_fit.py'),'--fit',str(fit),'--regression',str(regression),'--public-feedback']
+    command=[sys.executable,str(Path(external_fit.__file__)),'--fit',str(fit),'--regression',str(regression),'--public-feedback']
     common=['--rounds','1','--tasks',str(taskfile),'--evaluator-command',json.dumps(command)]
     report={'status':'RUNNING','checks':[]}
     def passed(name):report['checks'].append(name);print('PASS:',name,flush=True)
@@ -64,6 +62,4 @@ def main():
         report['status']='FAIL';report['error']=repr(exc);raise
     finally:
         (root/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8');print('Evidence:',root/'report.json',flush=True)
-
-
 if __name__=='__main__':main()

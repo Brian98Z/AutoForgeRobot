@@ -12,8 +12,10 @@ import sys
 import time
 import uuid
 
+import paths
+
 PROJECT = Path(__file__).resolve().parents[1]
-EXE = PROJECT / 'target/release/autoforge.exe'
+EXE = paths.release_binary(PROJECT)
 
 
 def digest(path):
@@ -32,7 +34,7 @@ def main():
     shutil.copy2(PROJECT / 'Cargo.lock', staged / 'Cargo.lock')
     environment = {k:v for k,v in os.environ.items() if not k.startswith('AUTOFORGE_')}
     environment.update(AUTOFORGE_PROJECT=str(staged), AUTOFORGE_PYTHON=sys.executable,
-                       AUTOFORGE_JULIA=str(PROJECT/'runtime/julia-1.13.3/bin/julia.exe'),
+                       AUTOFORGE_JULIA=str(paths.julia_binary(PROJECT)),
                        AUTOFORGE_PROVIDER='offline')
     report = dict(status='running', controller_before=digest(EXE), checks=[], commands=[],
                   qualification='operator-authored extension; no autonomous grammar invention')

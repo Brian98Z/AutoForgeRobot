@@ -10,10 +10,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 import application_dependencies as d
-
 from application_image_applicability_live_driver import extract_trixie_status
-
-
 def check_vendor_backport_parser() -> None:
     page = '''<table><tr><td>openssl</td><td>trixie</td><td>3.5.7-1~deb13u2</td><td>fixed</td></tr>
     <tr><td></td><td>trixie (security)</td><td>3.5.7-1~deb13u3</td><td>fixed</td></tr>
@@ -31,8 +28,6 @@ def check_vendor_backport_parser() -> None:
     unaffected = extract_trixie_status(not_affected, 'openssl', '(not affected)')
     assert unaffected['status'] == 'OBSERVED_VENDOR_FIXED'
     assert unaffected['exact_installed_version_rows'] == [{'release': 'trixie', 'version': '(not affected)', 'status': 'not affected'}]
-
-
 def check_signed_applicability(root: Path) -> None:
     from datetime import datetime,timezone,timedelta
     from cryptography.hazmat.primitives import serialization
@@ -130,8 +125,6 @@ def check_signed_applicability(root: Path) -> None:
     try:d.verify_image_applicability(report_path,gate_path,signed,sig,public,sources,regression,pinned_key_sha256=key_digest,reviewer_signature=reviewer_sig,reviewer_public_key_pem=reviewer_public,reviewer_key_sha256=reviewer_digest,now=now)
     except d.DependencyRefused:pass
     else:raise AssertionError('applicability gate accepted when raw scan was not FAIL')
-
-
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix='image-applicability-check-') as td:
         check_vendor_backport_parser(); check_signed_applicability(Path(td))
@@ -181,5 +174,4 @@ def main() -> None:
         with patch.object(d.subprocess,'run',side_effect=run): out=d.grype_image_gate(image,**common)
         assert out['status']=='PASS' and out['finding_count']==0, out
     print('{"status":"PASS","checks":["authorization","exact digest input","pinned scanner hash","invalid database HOLD","vulnerable image FAIL","clean image PASS","manifest mismatch HOLD","report digest","Debian backport exact-version parser","signed exact-match applicability CLI PASS","forged/incomplete/expired/source-tamper/scan-status negatives refused"]}')
-
 if __name__=='__main__': main()

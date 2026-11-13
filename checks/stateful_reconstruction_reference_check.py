@@ -8,11 +8,8 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 import argparse, json, shutil, tempfile
 from pathlib import Path
 import references, reference_reconstruction, application_builder
-
 ROOT=Path(__file__).resolve().parents[1]
 FIXTURE=ROOT/"fixtures"/"stateful_reference"
-
-
 def main(argv=None) -> int:
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--store",required=True)
@@ -42,7 +39,5 @@ def main(argv=None) -> int:
     except (OSError,ValueError,RuntimeError,application_builder.BuildFailure,application_builder.MissingPrerequisite,reference_reconstruction.ReconstructionHold) as exc:
         print(json.dumps({"status":"HOLD","reason":str(exc)},ensure_ascii=False),flush=True)
         return 2
-
-
 if __name__=="__main__":
     raise SystemExit(main())

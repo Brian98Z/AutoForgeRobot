@@ -4,6 +4,7 @@ from __future__ import annotations
 import json, os, subprocess, uuid
 from pathlib import Path
 import application_builder as builder
+import container_env
 
 class ResourceProbeUnavailable(RuntimeError): pass
 
@@ -26,7 +27,7 @@ _IDLE = 'import time;time.sleep(120)'
 
 def _run(argv, *, timeout, data=None, limit=builder.MAX_OUT):
     import threading
-    proc=subprocess.Popen(argv,stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env={'PATH':os.environ.get('PATH','')},close_fds=True,bufsize=0)
+    proc=subprocess.Popen(argv,stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=container_env.engine_env(),close_fds=True,bufsize=0)
     out=bytearray();err=bytearray();overflow=[False]
     def drain(stream,target,cap):
         while True:
@@ -59,7 +60,7 @@ def _container_with_resources(engine:str,image:str,root:Path,payload:bytes,timeo
     if len(payload)>builder.MAX_INPUT:raise builder.BuildFailure('container request payload exceeds byte limit')
     name='autoforge-quality-'+uuid.uuid4().hex
     base=[engine,'run','-d','--name',name,'--network=none','--read-only','--user=65534:65534','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=64','--memory=256m','--cpus=1','--mount',f'type=bind,src={root},dst=/candidate,readonly','--tmpfs','/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777','--workdir','/candidate','--entrypoint','python',image,'-I','-c',_IDLE]
-    started=subprocess.run(base,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=15,check=False,env={'PATH':os.environ.get('PATH','')},close_fds=True)
+    started=subprocess.run(base,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=15,check=False,env=container_env.engine_env(),close_fds=True)
     if started.returncode!=0:raise ResourceProbeUnavailable('isolated resource container failed to start')
     cid=started.stdout.decode('ascii','strict').strip()
     if not cid:raise ResourceProbeUnavailable('container engine returned no resource container identity')
@@ -76,4 +77,4 @@ def _container_with_resources(engine:str,image:str,root:Path,payload:bytes,timeo
             raise ResourceProbeUnavailable('invalid controller cgroup counters')
         return candidate.stdout,candidate.stderr,candidate.returncode,False,{**metrics,'source':'trusted engine exec reading cgroup-v2 memory.peak and cpu.stat; includes idle init and measurement commands'}
     finally:
-        subprocess.run([engine,'rm','-f',cid],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=8,check=False,env={'PATH':os.environ.get('PATH','')},close_fds=True)
+        subprocess.run([engine,'rm','-f',cid],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=8,check=False,env=container_env.engine_env(),close_fds=True)

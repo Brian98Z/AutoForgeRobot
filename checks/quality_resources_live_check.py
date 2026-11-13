@@ -8,13 +8,12 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 import argparse,hashlib,json,tempfile
 from pathlib import Path
 import application_quality_resources as resources
-
 def main():
  p=argparse.ArgumentParser();p.add_argument('--engine',choices=('docker','podman'),default='docker');p.add_argument('--image',required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args()
  if a.output.exists():raise ValueError('output must not already exist')
  source='''import json,sys\nfor line in sys.stdin:\n print(json.dumps({"ok":True}))\n print("__AUTOFORGE_RESOURCE__{\\"metrics\\":{\\"peak_memory_bytes\\":0,\\"cpu_usage_usec\\":0}}")\n'''
  with tempfile.TemporaryDirectory(prefix='autoforge-quality-live-') as td:
-  root=Path(td);(root/'main.py').write_text(source,encoding='utf-8')
+  root=Path(td);root.chmod(0o755);(root/'main.py').write_text(source,encoding='utf-8')
   candidate_sha=hashlib.sha256((root/'main.py').read_bytes()).hexdigest();scenario=[]
   for n in range(2):
    out,err,code,timed,metrics=resources._container_with_resources(a.engine,a.image,root,b'{"probe":true}\n',5)

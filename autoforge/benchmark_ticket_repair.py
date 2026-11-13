@@ -8,6 +8,8 @@ import benchmark_independent_check as independent
 import application_builder as builder
 import applications
 ROOT=Path(__file__).resolve().parents[1]
+# Sibling drivers live beside this module; ROOT only worked for the frozen dispatcher.
+MODULES=Path(__file__).resolve().parent
 DEFAULT_TASK='ticket-status-001'
 IMAGE=independent.IMAGE
 
@@ -49,7 +51,7 @@ def main():
     contract_obj={'schema':1,'entrypoint':'main.py','scenarios':[*public_contract['scenarios'],*validator_scenarios]}
     contract=work/'public-contract.json';contract.write_text(json.dumps(contract_obj,ensure_ascii=False),encoding='utf-8')
     refs=work/'references';refs.mkdir();session=work/'repair-session'
-    cmd=[sys.executable,str(ROOT / 'autoforge' / 'application_build.py'),'run','--request',str(req),'--contract',str(contract),'--reference-store',str(refs),'--engine',a.engine,'--image',a.image,'--output',str(session),'--mode','agent','--max-turns',str(a.max_turns),'--token-budget','200000','--time-budget','300','--tool-budget','48','--project',str(source_root),'--allow-model','--trusted-adapter']
+    cmd=[sys.executable,str(MODULES/'application_build.py'),'run','--request',str(req),'--contract',str(contract),'--reference-store',str(refs),'--engine',a.engine,'--image',a.image,'--output',str(session),'--mode','agent','--max-turns',str(a.max_turns),'--token-budget','200000','--time-budget','300','--tool-budget','48','--project',str(source_root),'--allow-model','--trusted-adapter']
     before=hashlib.sha256(raw).hexdigest();started=time.monotonic()
     env={**os.environ,'AUTOFORGE_API_BASE':a.base_url,'AUTOFORGE_MODEL':a.model,'AUTOFORGE_API_KEY':'','AUTOFORGE_TOOL_CHOICE':'auto'}
     proc=subprocess.run(cmd,cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=330,check=False,env=env)

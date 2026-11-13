@@ -1,0 +1,19 @@
+# Controller image context: only the module set the frozen EXE bundles, plus fixtures.
+# 8 GB of bootstrap-runs/evidence/runtime artifacts stays out of the build context.
+**
+!autoforge/**
+!universal/**
+!checks/**
+!fixtures/**
+!examples/**
+!docker/**
+!src/**
+!providers/**
+!Cargo.toml
+!Cargo.lock
+# Two retained fixtures (5 MB) are replayed verbatim by the browser-quality, framework and
+# stateful-operations checks; they stay out of the rest of bootstrap-runs.
+!bootstrap-runs/frontend-framework-20261104/**
+!bootstrap-runs/generated-web-extended-ce8932caad84/**
+**/__pycache__
+**/*.pyc

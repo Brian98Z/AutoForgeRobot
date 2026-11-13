@@ -13,8 +13,6 @@ import hashlib
 from pathlib import Path
 import application_provenance as provenance
 from application_provenance_live_driver import ARTIFACT, BASE, SIGNATURE
-
-
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--directory", type=Path, required=True)
@@ -46,6 +44,5 @@ def main() -> int:
             raise AssertionError("tampered exact artifact bytes were accepted")
     print("application_provenance_check: PASS (official detached signature, pinned publisher fingerprint, exact-byte tamper rejection)")
     return 0
-
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -10,12 +10,10 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 import application_platform as p
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
-
 def expect(fn):
     try:fn()
     except (p.PlatformRefused,ValueError,KeyError):return
     raise AssertionError('unsafe or incomplete platform acceptance was accepted')
-
 class PrefixedSocket:
     def __init__(self,sock,prefix):self.sock=sock;self.prefix=bytearray(prefix)
     def settimeout(self,value):self.sock.settimeout(value)
@@ -42,7 +40,6 @@ class EventFixture(BaseHTTPRequestHandler):
         size=int(self.headers.get('Content-Length','0'))
         if not 0<size<=65536:self.send_error(400);return
         value=json.loads(self.rfile.read(size));ident=str(value['id']);type(self).events.append((ident,value));self.send_response(202);self.end_headers()
-
 def realtime_smoke():
     EventFixture.events=[];EventFixture.connections=[];EventFixture.reverse=False
     server=ThreadingHTTPServer(('127.0.0.1',0),EventFixture);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start();port=server.server_address[1]
@@ -82,8 +79,9 @@ def guard_smoke():
         build_evidence={'status':'BUILT','candidate_sha256':digest,'apk_sha256':outside_sha,'apk':str(outside_apk),'container_image':'sha256:'+'a'*64,'container_network':'none','sdk_mount':'read-only','candidate_mount':'read-only manifest-staged only','candidate_executed':False,'build_tools_version':'36.0.0','signing':'ephemeral debug test key; not trusted/release','limitations':['fixture']}
         derived_execution={'adb_sha256':hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest(),'serial':'emulator-5554','apk_path':'@isolated-build/'+outside_sha,'apk_sha256':outside_sha,'build_evidence_sha256':hashlib.sha256(p._canonical(build_evidence)).hexdigest(),'package':'org.example.app','activity':'org.example.app/.Main','timeout_seconds':120}
         valid_contract={'schema':1,'target':'acceptance-device','scenarios':[{'name':'acceptance','actions':[],'assertions':[{'kind':'text','operator':'equals','value':'Ready'}]}]}
-        trusted_adb=p._sha(Path(sys.executable))
-        base_args=(manifest,valid_contract,{**auth,'execution':derived_execution},sys.executable,trusted_adb,'emulator-5554',str(outside_apk),outside_sha,'org.example.app','org.example.app/.Main',120)
+        runner=str(Path(sys.executable).resolve())
+        trusted_adb=p._sha(Path(runner))
+        base_args=(manifest,valid_contract,{**auth,'execution':derived_execution},runner,trusted_adb,'emulator-5554',str(outside_apk),outside_sha,'org.example.app','org.example.app/.Main',120)
         for invalid in (None,{**build_evidence,'candidate_sha256':'0'*64},{**build_evidence,'apk_sha256':'0'*64}):
             calls=[]
             try:
@@ -108,7 +106,6 @@ def guard_smoke():
         expect(lambda:p._desktop(manifest,desktop,{},'missing-runner','0'*64,30,'main.py',row['sha256'],[]))
         ws_contract={'schema':1,'target':'unsupported-ws','url':'ws://127.0.0.1:8000/events','protocol':'websocket','authentication':{'header':'Authorization','value':'Bearer unsupported-ws-token'},'unauthorized':[{'operation':'subscribe','expected_status':401,'path':'/events'},{'operation':'publish','expected_status':401,'path':'/publish'},{'operation':'stop','expected_status':401,'path':'/stop'}],'stop':{'path':'/stop','body':{'action':'stop'},'expected_status':202},'scenarios':[{'name':'unsupported','send':[{}],'expected_events':[{}],'reconnect_after':0}]}
         expect(lambda:p._event_contract(ws_contract))
-
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--live-realtime',action='store_true');ap.add_argument('--engine',choices=('docker','podman'),default='docker');ap.add_argument('--image',help='exact local Linux sha256 image ID; required with --live-realtime');ap.add_argument('--report',type=Path,help='absent path for persistent evidence');a=ap.parse_args()
     checks=guard_smoke();realtime=realtime_smoke();live=None

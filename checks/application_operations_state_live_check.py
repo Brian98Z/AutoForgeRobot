@@ -1,5 +1,4 @@
 """Opt-in operations lifecycle smoke on an unchanged retained generated Web app.
-
 Authorization is operator supplied and bound to the exact deployment root/image.
 The local image digest identifies the image; it is not a safety approval.
 """
@@ -12,11 +11,10 @@ import argparse, hashlib, json, shutil, tempfile, uuid
 from pathlib import Path
 import application_delivery as delivery
 import application_operations as ops
-
+import container_env
 ROOT=Path(__file__).resolve().parents[1]
 DEFAULT_CANDIDATE=ROOT/'bootstrap-runs'/'generated-web-extended-ce8932caad84'/'candidate'
 DEFAULT_EVIDENCE=ROOT/'bootstrap-runs'/'generated-web-extended-ce8932caad84'/'verification.json'
-
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--engine',choices=['docker'],required=True);p.add_argument('--image-id',required=True)
@@ -46,7 +44,7 @@ def main(argv=None):
         secrets={'ADMIN':uuid.uuid4().hex+'-admin','READER':uuid.uuid4().hex+'-reader'}
         private=root.parent/('autoforge-private-'+a.run_id);private.mkdir(mode=0o700);private.chmod(0o700)
         deployment=ops.deploy(pack,root,authorization=auth,request_id=a.run_id+'-deploy',image_id=a.image_id,engine=a.engine,command=command,contract=contract,config={},phase='shadow',secret_values=secrets,private_root=private,state_volume=volume)
-        tunnel=ops.Tunnel(a.engine,deployment['container_id'],{'PATH':__import__('os').environ.get('PATH','')})
+        tunnel=ops.Tunnel(a.engine,deployment['container_id'],container_env.engine_env())
         try:
             from application_service import _request
             headers={'Authorization':'Bearer '+secrets['ADMIN'],'Content-Type':'application/json'}
@@ -66,7 +64,7 @@ def main(argv=None):
         baseline_promoted=ops.transition(root,authorization=auth,image_id=a.image_id,engine=a.engine,action='promote',request_id=a.run_id+'-baseline-promote')
         restart_private=root.parent/('autoforge-private-'+a.run_id+'-restart');restart_private.mkdir(mode=0o700);restart_private.chmod(0o700)
         persisted=ops.deploy(pack,root,authorization=auth,request_id=a.run_id+'-restart',image_id=a.image_id,engine=a.engine,command=command,contract=contract,config={},phase='shadow',secret_values=secrets,private_root=restart_private,state_volume=volume)
-        tunnel=ops.Tunnel(a.engine,persisted['container_id'],{'PATH':__import__('os').environ.get('PATH','')})
+        tunnel=ops.Tunnel(a.engine,persisted['container_id'],container_env.engine_env())
         try:
             actual=_request(tunnel.port,'GET','/api/tasks',None,{'Authorization':'Bearer '+secrets['ADMIN']})
             if actual!={'status':200,'body':{'items':[{'id':1,'title':'operations-persisted'}]}}:raise AssertionError(f'generated data did not persist across restart: {actual!r}')

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 import application_dependencies as dependencies
 import application_builder as builder
+import container_env
 from email.parser import Parser
 import applications
 
@@ -17,7 +18,7 @@ MAX_TOTAL_OUTPUT=128*1024*1024
 def _sha(b:bytes)->str:return hashlib.sha256(b).hexdigest()
 def _json(x:Any)->bytes:return json.dumps(x,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()
 def _run(argv:list[str],timeout:int=20)->str:
-    try:r=subprocess.run(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout,check=False,env={'PATH':os.environ.get('PATH','')},close_fds=True)
+    try:r=subprocess.run(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout,check=False,env=container_env.engine_env(),close_fds=True)
     except (OSError,subprocess.TimeoutExpired) as e:raise ToolchainRefused(f'engine command unavailable or timed out: {argv[0]}') from e
     if r.returncode:raise ToolchainRefused(f'engine command failed ({r.returncode}): {r.stderr[:1000].decode(errors="replace")}')
     return r.stdout.decode('utf-8','replace').strip()
@@ -242,6 +243,7 @@ def run(manifest:dict,candidate_manifest:dict,cache:Path,engine:str,output:Path,
             name='autoforge-toolchain-'+uuid.uuid4().hex
             with tempfile.TemporaryDirectory(prefix='autoforge-stage-') as td:
                 stage=Path(td);cand=stage/'candidate';cand.mkdir()
+                os.chmod(stage,0o755)
                 for rel,data in files.items():
                     p=cand.joinpath(*rel.split('/'));p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data)
                 for p in cand.rglob('*'):
@@ -257,7 +259,7 @@ def run(manifest:dict,candidate_manifest:dict,cache:Path,engine:str,output:Path,
                 elif eco in {'node','typescript'}:setup='mkdir -p /build/project /build/home /build/result /build/project/node_modules/.bin; cp -r /autoforge/. /build/project/; chmod -R u+rwX /build/project; cp -r /autoforge-deps/node_modules/. /build/project/node_modules/; chmod -R u+rwX /build/project/node_modules; chmod -R a+rx /build/project/node_modules/.bin; if [ -f /build/project/node_modules/preact/package.json ]; then cp /build/project/node_modules/preact/dist/preact.umd.js /build/project/preact.umd.js; fi; export HOME=/build/home npm_config_offline=true npm_config_ignore_scripts=true npm_config_audit=false npm_config_fund=false; export PATH=/build/project/node_modules/.bin:$PATH; node --version; npm --version; cd /build/project; '+shlex.join(build_argv)+'; rm -rf node_modules; cp -r /build/project/. /build/result/'
                 else:setup='mkdir -p /build/project /build/home /build/result; cp -r /autoforge/. /build/project/; chmod -R u+rwX /build/project; if [ -n "${JAVA_HOME:-}" ]; then export PATH="$JAVA_HOME/bin:$PATH"; fi; export HOME=/build/home CLASSPATH="/build/project:/autoforge-deps/jars/*"; java -version; javac -version; cd /build/project; '+shlex.join(build_argv)+'; if [ -f Main.class ]; then java -cp ".:/autoforge-deps/jars/*" Main; fi; cp -r /build/project/. /build/result/'
                 cmd[-1]='set -eu; ( '+setup+' ) >&2; tar -C /build/result -cf - .'
-                try:proc=subprocess.Popen(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env={'PATH':os.environ.get('PATH','')},close_fds=True,bufsize=0)
+                try:proc=subprocess.Popen(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=container_env.engine_env(),close_fds=True,bufsize=0)
                 except Exception:
                     try:subprocess.run([engine,'rm','-f',name],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10,check=False)
                     except (OSError,subprocess.TimeoutExpired):pass

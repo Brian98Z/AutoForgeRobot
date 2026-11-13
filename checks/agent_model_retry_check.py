@@ -13,8 +13,6 @@ import threading
 from unittest.mock import patch
 import agent_runtime
 import agent_session
-
-
 class Provider(BaseHTTPRequestHandler):
     mode = ''
     requests = 0
@@ -42,8 +40,6 @@ class Provider(BaseHTTPRequestHandler):
         else:
             delta = {'role': 'assistant', 'tool_calls': [{'index': 0, 'id': 'committed', 'type': 'function', 'function': {'name': 'write_file', 'arguments': args}}]}; finish = 'tool_calls'
         send({'choices': [{'index': 0, 'delta': delta, 'finish_reason': finish}]}); send(b'[DONE]')
-
-
 def main():
     server = ThreadingHTTPServer(('127.0.0.1', 0), Provider)
     worker = threading.Thread(target=server.serve_forever, daemon=True); worker.start()
@@ -88,6 +84,4 @@ def main():
     finally:
         server.shutdown(); server.server_close(); worker.join(timeout=2)
     print(json.dumps({'status': 'PASS', 'scope': 'real HTTP fault injection, not model quality or candidate execution', 'checks': results}))
-
-
 if __name__ == '__main__': main()

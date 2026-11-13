@@ -9,8 +9,6 @@ import applications
 import application_spec as spec
 import application_spec_check
 import specification_adapter as adapter
-
-
 def main():
     with tempfile.TemporaryDirectory(prefix='spec-adapter-') as tmp:
         root=Path(tmp)

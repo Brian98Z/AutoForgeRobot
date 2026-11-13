@@ -3,6 +3,7 @@ import argparse,hashlib,json,os,subprocess,sys,uuid
 from pathlib import Path
 import application_builder,application_platform
 ROOT=Path(__file__).resolve().parents[1]
+MODULES=Path(__file__).resolve().parent
 
 def main():
  p=argparse.ArgumentParser();p.add_argument('--contract',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args()
@@ -15,7 +16,7 @@ def main():
  if len(members)!=1 or members[0]['path']!=source_path:raise ValueError('single contract-bound source file required')
  run_id=uuid.uuid4().hex;output=a.output/run_id;output.mkdir(parents=True,exist_ok=False)
  request={'schema':1,'source_root':str(source_root),'source_sha256':members[0]['sha256'],'source_path':source_path,'target':contract['target'],'scenarios':contract['scenarios'],'timeout_seconds':120,'run_id':run_id}
- proc=subprocess.run([sys.executable,str(ROOT / 'autoforge' / 'windows_sandbox_source_build_runner.py'),'--contract',str(a.contract.resolve()),'--timeout','120'],input=json.dumps(request).encode('utf8'),capture_output=True,timeout=240,env={**os.environ,'AUTOFORGE_HOST_WITNESS_DIR':str(output/'host-witness')})
+ proc=subprocess.run([sys.executable,str(MODULES/'windows_sandbox_source_build_runner.py'),'--contract',str(a.contract.resolve()),'--timeout','120'],input=json.dumps(request).encode('utf8'),capture_output=True,timeout=240,env={**os.environ,'AUTOFORGE_HOST_WITNESS_DIR':str(output/'host-witness')})
  (output/'runner.stdout').write_bytes(proc.stdout);(output/'runner.stderr').write_bytes(proc.stderr)
  report={'status':'FAIL','candidate_sha256':digest,'source_sha256':members[0]['sha256'],'runner_returncode':proc.returncode}
  observations=[]

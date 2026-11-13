@@ -47,7 +47,7 @@ def prepare(out, source):
             'summary': summary, 'source_environment': environment(), 'model': MODEL,
             'base_url': 'http://127.0.0.1:8084/v1', 'image': IMAGE,
             'budget': {'proposals': 3, 'seconds': 240, 'token_upper_bound': 100000, 'output_tokens_per_proposal': 8192},
-            'driver_sha256': sha(__file__), 'proposer_sha256': sha(ROOT / 'autoforge' / 'application_proposer.py'),
+            'driver_sha256': sha(__file__), 'proposer_sha256': sha(ROOT / 'application_proposer.py'),
             'source_evidence': {str(p): sha(p) for p in [source / 'source-evidence.json', source / 'experiences/current.json', source / 'inventory-list/context.json']},
             'transfer_mapping': {'source': 'SQLite SKU lexical ascending output', 'targets': 'SQLite item/account identifier lexical ascending output',
                  'authority': 'coordinator inference, not exact task/environment equivalence',
@@ -167,7 +167,7 @@ def positive_rule_satisfied(rows):
 
 def run(out):
     plan = load(out / 'preregistration.json')
-    if plan['driver_sha256'] != sha(__file__) or plan['proposer_sha256'] != sha(ROOT / 'autoforge' / 'application_proposer.py') or plan['source_environment'] != environment():
+    if plan['driver_sha256'] != sha(__file__) or plan['proposer_sha256'] != sha(ROOT / 'application_proposer.py') or plan['source_environment'] != environment():
         raise ValueError('frozen implementation changed')
     for path, digest in plan['source_evidence'].items():
         if sha(path) != digest: raise ValueError('source evidence changed')

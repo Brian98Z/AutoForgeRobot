@@ -7,8 +7,6 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 import hashlib
 from pathlib import Path
 import application_toolchain as t
-
-
 def main()->None:
     image='sha256:'+'a'*64
     manifest={'schema':1,'toolchain':{'container_image':image},'ecosystem':'python','install_argv':['python','-m','pip','install','--no-index','--require-hashes','--find-links','/autoforge-cache','-r','/autoforge/requirements.lock'],'artifacts':[],'source_allowlist':{}}
@@ -28,5 +26,4 @@ def main()->None:
     assert t._npm_matches_any('10.26.4','>=10')
     assert t._npm_matches_any('10.26.4','^10')
     assert not t._npm_matches_any('11.0.0','^10')
-
 if __name__=='__main__':main()

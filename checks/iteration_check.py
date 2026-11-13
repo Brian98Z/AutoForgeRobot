@@ -8,12 +8,12 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 import argparse
 import json, os, subprocess, sys, tempfile
 from pathlib import Path
-
+import iterate
+import external_fit
 ROOT=Path(__file__).resolve().parents[1]
-RUNNER=ROOT / "autoforge" / "iterate.py"
+RUNNER=Path(iterate.__file__)
 EXE=ROOT/"target/release/autoforge.exe"
-EXTERNAL_FIT=ROOT / "autoforge" / "external_fit.py"
-
+EXTERNAL_FIT=Path(external_fit.__file__)
 def run(*args, expected=0):
     env=os.environ.copy()
     for key in tuple(env):
@@ -23,10 +23,8 @@ def run(*args, expected=0):
     out=p.stdout.decode("utf-8","replace"); err=p.stderr.decode("utf-8","replace")
     if p.returncode!=expected:raise RuntimeError(f"expected exit {expected}, got {p.returncode}: {args}\n{out}\n{err}")
     return out,err
-
 def require(ok,msg):
     if not ok:raise AssertionError(msg)
-
 def main():
     if not EXE.is_file():raise FileNotFoundError(f"release executable missing: {EXE}")
     with tempfile.TemporaryDirectory(prefix="autoforge-iteration-") as td:

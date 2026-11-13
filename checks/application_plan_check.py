@@ -13,19 +13,15 @@ import time
 from pathlib import Path
 import application_plan as plan
 import application_spec
-
-
 def spec_fixture():
     raw={"schema":1,"spec_id":"plan-test","version":1,"goal":"run trusted adapter","requirements":[{"id":"R","statement":"Produce recorded adapter evidence","provenance":"user","source":"request","inputs":["task"],"outputs":["evidence"],"failures":["invalid request held"],"invariants":["task and acceptance are bound"],"state_transitions":[],"non_goals":[],"acceptance_ids":["A"],"ambiguity_ids":[],"conflict_ids":[]}],"entities":[],"tasks":[{"id":"T1","title":"first","depends_on":[],"requirement_ids":["R"],"acceptance_ids":["A"],"kind":"implementation"},{"id":"T2","title":"second","depends_on":["T1"],"requirement_ids":["R"],"acceptance_ids":["A"],"kind":"verification"}],"oracle":{"public_acceptance_ids":["A"],"hidden_oracle_ids":["H"],"separation":"separate"},"ambiguities":[],"conflicts":[],"non_goals":[]}
     return application_spec.approve_spec(application_spec.propose_spec(raw),operator="operator",authorization_source="check fixture approval")
-
 ADAPTER='import json,sys; p=json.load(sys.stdin); print(json.dumps({"status":"SUCCEEDED","evidence_id":"fixture-"+p["task_id"],"task_id":p["task_id"],"attempt_id":p["attempt_id"],"requirement_ids":p["requirement_ids"],"acceptance_ids":p["acceptance_ids"]}))'
 def make_adapter():return [sys.executable,"-c",ADAPTER]
 def cli(*args,timeout=10):
     return subprocess.run([sys.executable,str(Path(plan.__file__)),*map(str,args)],capture_output=True,text=True,timeout=timeout,check=False)
 def create_cli(spec_path,adapters_path,output_path,timeout=10):
     return subprocess.run([sys.executable,str(Path(application_spec.__file__)),"plan",str(spec_path),"--adapters",str(adapters_path),"--output",str(output_path)],capture_output=True,text=True,timeout=timeout,check=False)
-
 def main():
   with tempfile.TemporaryDirectory() as td:
     spec=spec_fixture();argv={"implementation":make_adapter(),"verification":make_adapter()}
@@ -50,7 +46,6 @@ def main():
         try:plan.run(p0,timeout=invalid_timeout)
         except plan.PlanRefused:pass
         else:raise AssertionError(f"invalid timeout accepted: {invalid_timeout!r}")
-
     # Actual CLI path consumes approved spec + explicit trusted adapters, never candidate source.
     cli_spec=Path(td)/"approved-spec.json";cli_spec.write_text(json.dumps(spec),encoding="utf-8")
     good=make_adapter();adapters=Path(td)/"adapters.json";adapters.write_text(json.dumps({"implementation":good,"verification":good}),encoding="utf-8")
@@ -66,7 +61,6 @@ def main():
     bad_run=cli("run",bad_plan);assert bad_run.returncode==3
     bad_state=json.loads(bad_run.stdout);assert bad_state["status"]=="UNKNOWN" and bad_state["tasks"][0]["state"]=="UNKNOWN"
     assert cli("resume",bad_plan).returncode==3 and json.loads(cli("status",bad_plan).stdout)["tasks"][0]["state"]=="UNKNOWN"
-
     marker=Path(td)/"adapter-started"
     long='import json,sys,time,pathlib; pathlib.Path('+repr(str(marker))+').write_text("started"); time.sleep(30)'
     long_adapters=Path(td)/"long-adapters.json";long_argv=[sys.executable,"-c",long];long_adapters.write_text(json.dumps({"implementation":long_argv,"verification":good}),encoding="utf-8")

@@ -10,11 +10,12 @@ from pathlib import Path
 import application_builder as builder
 import application_service as service
 import application_database as database
+import container_env
 ROOT=Path(__file__).resolve().parents[1]
 FIXTURES=ROOT/'fixtures'/'container_acceptance'
 def canon(x): return json.dumps(x,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()
 def command(argv,timeout=12):
-    p=subprocess.run(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout,check=False,env={'PATH':os.environ.get('PATH','')},close_fds=True)
+    p=subprocess.run(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout,check=False,env=container_env.engine_env(),close_fds=True)
     if len(p.stdout)>65536 or len(p.stderr)>65536: raise RuntimeError('engine command response exceeded limit')
     return p
 def manifest(path):
@@ -32,7 +33,7 @@ def security(engine,image,host_canary):
     argv=[engine,'run','--rm','--name',name,'--network=none','--read-only','--user=65534:65534','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=64','--memory=256m','--cpus=1','--mount',f'type=bind,src={root},dst=/candidate,readonly','--entrypoint','python',image,'-I','-c',code]
     try:
         with tempfile.TemporaryFile() as out,tempfile.TemporaryFile() as err:
-            proc=subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=out,stderr=err,env={'PATH':os.environ.get('PATH','')},close_fds=True)
+            proc=subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=out,stderr=err,env=container_env.engine_env(),close_fds=True)
             try:proc.wait(timeout=8)
             except subprocess.TimeoutExpired:
                 command([engine,'kill',name],5);proc.kill();proc.wait(timeout=3);raise CheckFailure('security probe timed out')
@@ -49,6 +50,8 @@ def security(engine,image,host_canary):
     checks={}
     # Output flood uses the builder's actual bounded capture path.
     flood=Path(tempfile.mkdtemp(prefix='autoforge-output-'))
+    # UID 65534 must traverse the mount source; mkdtemp defaults to 0700.
+    os.chmod(flood,0o755)
     try:
         (flood/'main.py').write_text('import sys'+chr(10)+'for _ in sys.stdin: print("x"*1048576,flush=True)'+chr(10),encoding='utf-8')
         out,err,code,timed=builder._container(engine,image,flood,b'{"op":"x"}'+bytes([10]),5)
@@ -61,7 +64,7 @@ def security(engine,image,host_canary):
         n='autoforge-sec-'+uuid.uuid4().hex;argv=[engine,'run','--name',n,'--network=none','--read-only','--user=65534:65534','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=64','--memory=256m','--cpus=1','--entrypoint','python',image,'-I','-c',src];start=time.monotonic();outcome='completed';size=0;payload=b''
         try:
             with tempfile.TemporaryFile() as out,tempfile.TemporaryFile() as err:
-                proc=subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=out,stderr=err,env={'PATH':os.environ.get('PATH','')},close_fds=True)
+                proc=subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=out,stderr=err,env=container_env.engine_env(),close_fds=True)
                 try:proc.wait(timeout=limit)
                 except subprocess.TimeoutExpired:outcome='timeout';command([engine,'kill',n],5);proc.kill();proc.wait(timeout=3)
                 out.seek(0,os.SEEK_END);size=out.tell();out.seek(0);payload=out.read(1024)

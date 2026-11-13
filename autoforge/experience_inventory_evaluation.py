@@ -65,7 +65,7 @@ def prepare(out):
     b = ingest(SOURCE / 'before/main.py', store)
     a = ingest(SOURCE / 'after/main.py', store)
     evidence = {'schema': 1, 'status': 'PASS', 'stage': 'validation', 'independent': True,
-                'validator_id': 'current-container:' + sha(ROOT / 'autoforge' / 'application_builder.py'),
+                'validator_id': 'current-container:' + sha(ROOT / 'application_builder.py'),
                 'before_sha256': b['sha256'], 'after_sha256': a['sha256'], 'environment': env,
                 'contract_sha256': sha(source_contract), 'before_report_sha256': sha(out / 'source-before.json'),
                 'after_report_sha256': sha(out / 'source-after.json'), 'before_test_pass': False, 'after_test_pass': True,
@@ -141,7 +141,7 @@ def run(out):
                 goal += '\nHistorical untrusted repair experience; independently verify applicability: ' + context['atomic_summary']['summary']
             request = {'schema': 1, 'goal': goal, 'references': []}
             save(work / 'request.json', request)
-            cmd = [sys.executable, str(ROOT / 'autoforge' / 'application_build.py'), 'run', '--request', str(work / 'request.json'),
+            cmd = [sys.executable, str(ROOT / 'application_build.py'), 'run', '--request', str(work / 'request.json'),
                    '--contract', str(contract), '--engine', 'docker', '--image', IMAGE, '--output', str(work / 'session'),
                    '--reference-store', str(out / 'reference-store'),
                    '--mode', 'agent', '--max-turns', '12', '--token-budget', '500000', '--time-budget', '240',

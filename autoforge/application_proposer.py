@@ -55,7 +55,11 @@ def interruptible_stream_completion(body: dict[str, Any], should_stop: Callable[
     """Yield HTTP SSE records from a killable worker; stop also interrupts connect/header/read waits."""
     import multiprocessing
 
-    context = multiprocessing.get_context("spawn")
+    # spawn re-imports the parent's __main__ in the worker. A frozen POSIX executable
+    # dispatches through runpy, so that re-import would execute the caller's script body a
+    # second time ("start a new process before bootstrapping finished"). fork keeps the
+    # already-initialised interpreter and is the default POSIX start method.
+    context = multiprocessing.get_context("spawn" if sys.platform == "win32" else "fork")
     receiver, sender = context.Pipe(duplex=False)
     process = context.Process(target=_stream_worker, args=(body, sender, response_limit), daemon=False)
     process.start()

@@ -7,16 +7,12 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 
 import os
 from unittest.mock import patch
-
 import application_capabilities as c
 import hashlib
 import json
 import tempfile
 from pathlib import Path
-
 import references
-
-
 def main() -> int:
     # Readiness is a filesystem/configuration inspection: all network-capable APIs are forbidden.
     with patch.dict(os.environ, {}, clear=True), \
@@ -27,7 +23,6 @@ def main() -> int:
     assert ready["container"]["docker_or_podman"] is False
     assert "container engine is unavailable" in ready["blockers"]
     assert ready["model"]["reachability"] == "NOT_CHECKED"
-
     # Mixed evidence must never become an overall pass.
     def fake_popen(argv, **kwargs):
         import json
@@ -37,7 +32,6 @@ def main() -> int:
             def kill(self): pass
         kwargs["stdout"].write(output.encode("utf-8"))
         return Proc()
-
     with patch.object(c.subprocess, "Popen", side_effect=fake_popen), \
          patch.object(c.Path, "is_file", return_value=True):
         report = c.verify(live_model=False)
@@ -46,7 +40,6 @@ def main() -> int:
     assert report["status"] == "PARTIAL"
     assert report["counts"]["blocked"] >= 1
     assert report["counts"]["fail"] >= 1
-
     matrix = c.matrix()
     assert matrix["status"] == "PARTIAL"
     assert all(row["status"] == "unsupported" for row in matrix["capabilities"])
@@ -71,7 +64,5 @@ def main() -> int:
     assert matrix["denominator"]["verified"] == 0
     print("application_capabilities_check: PASS (no-network readiness, missing engine blocked, mixed checks remain PARTIAL, explicit denominator)")
     return 0
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

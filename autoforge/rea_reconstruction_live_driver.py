@@ -6,6 +6,8 @@ from pathlib import Path
 import applications, agent_runtime, agent_budget, application_builder, references, reference_reconstruction as runner
 
 ROOT = Path(__file__).resolve().parents[1]
+# Sibling drivers live beside this module; ROOT only worked for the frozen dispatcher.
+MODULES = Path(__file__).resolve().parent
 EVIDENCE_IDS = ["ev_7e3f57f9b575b7645eedb6b7418eae4d1f24bc270f838a21e23a2af4c93f90a1", "ev_b04ce6629ab278fc7482d58fded7a4b4afef64bc2d38ec342cfe51588a3952e4"]
 ARTIFACT_SHA256 = "0af087828b287131ba6b90b01feb43da989fc2e2f21861b798f75247c58c759c"
 
@@ -30,7 +32,7 @@ def main() -> int:
     refs=applications._resolve_references(Path(a.store),request["references"])
     info=application_builder.preflight(a.engine,a.image)
     output=Path(a.candidate)
-    result=agent_runtime.run(request,refs,[sys.executable,str(ROOT / "autoforge" / "application_builder.py"),"--engine",a.engine,"--image",a.image,"--contract",str(Path(a.acceptance_contract).resolve())],output,a.max_turns,
+    result=agent_runtime.run(request,refs,[sys.executable,str(MODULES/"application_builder.py"),"--engine",a.engine,"--image",a.image,"--contract",str(Path(a.acceptance_contract).resolve())],output,a.max_turns,
                             limits=agent_budget.Limits(model_calls=a.max_turns,tool_calls=96,tokens=500000,seconds=600),
                              allowed_tools=["list_files","read_file","create_file","edit_file","search_files","read_reference","search_references","validate"])
     if result["status"] != "PASS":

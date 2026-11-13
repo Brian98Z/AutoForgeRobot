@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Standalone runtime smoke for AutoForge business components.
-
 Run local checks with: python checks/application_components_check.py
 The driver creates a temporary trusted local HTTPS receiver and exercises authorized
 GET integration + idempotent webhook delivery; OpenSSL is required only for this fixture.
@@ -22,20 +21,15 @@ class LocalReceiver(BaseHTTPRequestHandler):
     def do_POST(self):
         body=self.rfile.read(int(self.headers.get('Content-Length','0')));type(self).requests.append(('POST',self.path,body));self.send_response(200);self.end_headers();self.wfile.write(b'{"accepted":true}')
     def log_message(self,*args):pass
-
 def local_https(base):
     key=base/'localhost.key';cert=base/'localhost.crt'
     subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-keyout',str(key),'-out',str(cert),'-days','1','-subj','/CN=127.0.0.1','-addext','subjectAltName=IP:127.0.0.1'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     context=ssl.create_default_context(cafile=str(cert));server=HTTPServer(('127.0.0.1',0),LocalReceiver);server_context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);server_context.load_cert_chain(str(cert),str(key));server.socket=server_context.wrap_socket(server.socket,server_side=True)
     thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start();return server,context
-
-
 def rejected(fn):
     try: fn()
     except c.ComponentError: return
     raise AssertionError('unsafe or invalid operation was accepted')
-
-
 def main():
     p=argparse.ArgumentParser();a=p.parse_args()
     with tempfile.TemporaryDirectory(prefix='autoforge-components-smoke-') as td:

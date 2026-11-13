@@ -5,6 +5,7 @@ import argparse, hashlib, json, math, os, stat, tempfile
 from pathlib import Path
 import references
 import application_builder
+import container_env
 
 class ReconstructionHold(ValueError): pass
 
@@ -72,6 +73,7 @@ def evaluate(store, package_id, candidate, contract_path, *, engine, image):
     reports={}
     with tempfile.TemporaryDirectory(prefix="autoforge-reference-run-") as temp:
         root=Path(temp)
+        os.chmod(root,0o755)
         for label, files in (("reference",source_files),("candidate",None)):
             scenario_results=[]
             for index,scenario in enumerate(scenarios):
@@ -214,6 +216,7 @@ def evaluate_evidence(store, evidence_package_id, reference_package_id, candidat
     reports = {}
     with tempfile.TemporaryDirectory(prefix="autoforge-rea-reconstruction-") as temp:
         temp_root = Path(temp)
+        os.chmod(temp_root,0o755)
         for label, files in (("operator_reference", ref_files), ("candidate", None)):
             results = []
             for index, scenario in enumerate(scenarios):
@@ -301,7 +304,7 @@ def _stateful_restart_container(engine, image, work, invocations, timeout, *, ru
            "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777", "--workdir", "/candidate", "--interactive", "--entrypoint", command[0], image, *command[1:]]
     try:
         proc = subprocess.run(cmd, input=payload, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout,
-                              check=False, env={"PATH": os.environ.get("PATH", "")}, close_fds=True)
+                              check=False, env=container_env.engine_env(), close_fds=True)
     except subprocess.TimeoutExpired:
         return [], b"", -1, True
     if len(proc.stdout) > application_builder.MAX_OUT or len(proc.stderr) > application_builder.MAX_ERR:
@@ -413,6 +416,7 @@ def evaluate_stateful(store, package_id, candidate, contract_path, *, engine, im
     cand_info=application_builder.preflight(engine,image)
     reports={}
     with tempfile.TemporaryDirectory(prefix="autoforge-stateful-reconstruction-") as temp:
+        os.chmod(temp,0o755)
         for label,runtime,run_engine,run_image in (("operator_reference","node",reference_engine,reference_image),("candidate","python",engine,image)):
             cases=[(row["name"],[b"".join(application_builder._json_bytes(req)+b"\n" for req in row["requests"])],[row["expected"]],None,"same_process") for row in normal]
             cases.extend((name,batches,expected,precondition,"malformed_recovery") for name,batches,expected,precondition in raw_cases)

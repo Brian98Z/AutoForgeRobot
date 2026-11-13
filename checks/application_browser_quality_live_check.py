@@ -5,25 +5,23 @@ import sys as _sys
 from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 
-import argparse, hashlib, json, shutil, uuid
+import argparse, hashlib, json, os, shutil, uuid
 from pathlib import Path
 import application_browser
 import application_builder
 import application_service
 import application_dependencies as deps
 import application_toolchain as toolchain
-
 ROOT=Path(__file__).resolve().parents[1]
 RUNS=ROOT/'bootstrap-runs'
 SOURCE=RUNS/'frontend-framework-20261104'/'generated-backend-preact-integration-rerun4'
 BACKEND=RUNS/'generated-web-extended-ce8932caad84'/'candidate'
-IMAGE='sha256:673719e071ecf27434fd2635bbd8d00f49f4fdd81f243143438a42ced8bedf60'
+IMAGE=os.environ.get('AUTOFORGE_QUALITY_IMAGE') or 'sha256:673719e071ecf27434fd2635bbd8d00f49f4fdd81f243143438a42ced8bedf60'
 FRAME=RUNS/'frontend-framework-20261104'
 CACHE=FRAME/'cache'
 PREACT='3ee2f67884ecaad0652a3bb75d1b6734518dc276f0af653e9fb2d24bfc441c27'
 TYPESCRIPT='10e108c9cf7d5f2879053dff18515fb405abf2ccef63eaaf017d9c571687a1d3'
-NODE_IMAGE='sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da'
-
+NODE_IMAGE=os.environ.get('AUTOFORGE_QUALITY_NODE_IMAGE') or 'sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da'
 def sha(data:bytes)->str:return hashlib.sha256(data).hexdigest()
 def manifest(root:Path,goal:str)->dict:
     rows=[]
@@ -35,7 +33,6 @@ def manifest(root:Path,goal:str)->dict:
     body['workspace']=str(root.resolve())
     (root/'manifest.json').write_text(json.dumps(body,sort_keys=True,indent=2)+'\n',encoding='utf8')
     return body
-
 def contract(steps):return {'schema':1,'start_path':'/','steps':steps}
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--engine',choices=('docker','podman'),default='docker');p.add_argument('--authorize-browser',action='store_true');p.add_argument('--output',type=Path,required=True);p.add_argument('--browser-engines',default='chromium,firefox,webkit');a=p.parse_args(argv)
@@ -57,7 +54,6 @@ def main(argv=None):
 <div id="error" role="alert" aria-live="assertive"></div>
 <script src="/ui/login.js"></script>
 </body></html>"""
-
 TASKS_HTML = """<!DOCTYPE html>
 <html><head><title>Tasks</title></head>
 <body>
@@ -75,7 +71,6 @@ TASKS_HTML = """<!DOCTYPE html>
 <script src="/ui/preact.umd.js"></script>
 <script src="/ui/dist/client.js"></script>
 </body></html>"""
-
 def page(role):
     if role == "reader":
         return TASKS_HTML.replace('<form id="create-area">','<form id="create-area" hidden>').replace('<div id="readonly" role="status" aria-live="polite" style="display:none">','<div id="readonly" role="status" aria-live="polite">')

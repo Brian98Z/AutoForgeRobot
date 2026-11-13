@@ -6,6 +6,8 @@ from pathlib import Path
 import agent_budget, agent_runtime, application_builder, application_proposer, applications, references, reference_reconstruction
 
 ROOT = Path(__file__).resolve().parents[1]
+# Adapters ship beside this module; the project root holds fixtures, not adapter scripts.
+MODULES = Path(__file__).resolve().parent
 FIXTURE = ROOT / "fixtures" / "stateful_reference"
 
 
@@ -76,7 +78,7 @@ def main_from_args(args) -> int:
         output=Path(args.candidate).resolve();run_dir=output.parent/(output.name+"-model-session")
         if output.exists() or run_dir.exists() or Path(args.report).exists():
             raise SystemExit("HOLD: candidate, model-session, and report outputs must be absent")
-        builder_argv=[sys.executable,str(ROOT / "autoforge" / "stateful_reconstruction_adapter.py"),"--store",str(store.resolve()),"--package-id",package["package_id"],"--contract",str(bound_contract.resolve()),"--engine",args.engine,"--image",args.image,"--node-image",args.node_image]
+        builder_argv=[sys.executable,str(MODULES/"stateful_reconstruction_adapter.py"),"--store",str(store.resolve()),"--package-id",package["package_id"],"--contract",str(bound_contract.resolve()),"--engine",args.engine,"--image",args.image,"--node-image",args.node_image]
         refs=applications._resolve_references(store,req["references"])
         session=agent_runtime.run(req,refs,builder_argv,run_dir,args.max_turns,limits=agent_budget.Limits(model_calls=args.max_turns,tool_calls=96,tokens=args.token_budget,seconds=600),allowed_tools=["list_files","read_file","create_file","edit_file","search_files","read_reference","search_references","validate"])
         child_report=run_dir/"candidate.json"

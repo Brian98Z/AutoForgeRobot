@@ -13,6 +13,8 @@ import tempfile
 import time
 import uuid
 
+import paths
+
 from universal.machine import _atomic_create
 
 
@@ -85,7 +87,7 @@ def evaluate(project,state,task_path,release_id,output_dir,command,timeout):
                  'wasm_sha256':release['wasm'],'evaluator_id':command_identity(command,project),
                  'task':{key:task[key] for key in ('id','goal','public_cases')},
                  'candidate':{'wat':wat.read_text(encoding='utf-8'),'wasm_path':str(wasm.resolve())},
-                 'execution':{'controller':str((project/'target/release/autoforge.exe').resolve()),'state':str(state.resolve())}}
+                 'execution':{'controller':str(paths.release_binary(project).resolve()),'state':str(state.resolve())}}
         receipt['request']=request
         with tempfile.TemporaryFile() as stdin,tempfile.TemporaryFile() as stdout,tempfile.TemporaryFile() as stderr:
             stdin.write(json.dumps(request,ensure_ascii=False).encode());stdin.seek(0)

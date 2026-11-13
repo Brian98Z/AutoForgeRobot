@@ -5,6 +5,7 @@ read-only, non-root and resource-limited; the existing exec-pipe tunnel is used 
 health and business probes. No generated code runs on the host.
 """
 from __future__ import annotations
+import traceback
 import argparse, hashlib, http.client, json, os, re, shutil, subprocess, sys, tempfile, time, uuid
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ import application_builder as builder
 import application_checkpoint as checkpoint
 import application_delivery as delivery
 import application_secrets as secrets_module
+import container_env
 from container_http_tunnel import Tunnel
 
 class OperationsRefused(ValueError): pass
@@ -20,7 +22,7 @@ OWNER='autoforge-application-operations-v1'
 
 
 def _run(engine:str,args:list[str],timeout:int=20)->str:
-    try:r=subprocess.run([engine,*args],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout,check=False,env={'PATH':os.environ.get('PATH','')},close_fds=True)
+    try:r=subprocess.run([engine,*args],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout,check=False,env=container_env.engine_env(),close_fds=True)
     except (OSError,subprocess.TimeoutExpired) as e:raise OperationsRefused(f'container engine command failed: {args[0]}') from e
     if r.returncode: raise OperationsRefused(f'container engine command failed ({args[0]}): {r.stderr[:1000].decode("utf-8","replace")}')
     return r.stdout.decode('utf-8','replace').strip()
@@ -60,7 +62,7 @@ def _stateful_database(engine:str,image_id:str,volume:str,migration_sql:str|None
     scope=hashlib.sha256(str(Path(root).resolve()).encode()).hexdigest()
     found=_run(engine,['volume','ls','-q','--filter',f'name=^{volume}$'])
     if not found:_run(engine,['volume','create','--label',f'{LABEL}={OWNER}','--label',f'io.omp.autoforge.state-root={scope}',volume])
-    labels=json.loads(_run(engine,['volume','inspect','--format','{{json .Labels}}',volume]))
+    labels=json.loads(_run(engine,['volume','inspect','--format','{{json .Labels}}',volume])) or {}
     if labels.get(LABEL)!=OWNER or labels.get('io.omp.autoforge.state-root')!=scope:raise OperationsRefused('state volume is not owned by this exact deployment root')
     result={'volume':volume,'migration':'not_requested','backup':'not_requested','data_rollback':'not_claimed'}
     if migration_sql is None:
@@ -129,7 +131,7 @@ def _backup_state(engine:str,image_id:str,volume:str,destination:Path,root:Path)
     if dest.exists() or dest.is_symlink() or not dest.parent.is_dir():raise OperationsRefused('backup destination must be absent and have an existing parent')
     if not re.fullmatch(r'af-state-[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}',volume):raise OperationsRefused('invalid AutoForge state volume')
     scope=hashlib.sha256(str(root.resolve()).encode()).hexdigest()
-    labels=json.loads(_run(engine,['volume','inspect','--format','{{json .Labels}}',volume]))
+    labels=json.loads(_run(engine,['volume','inspect','--format','{{json .Labels}}',volume])) or {}
     if labels.get(LABEL)!=OWNER or labels.get('io.omp.autoforge.state-root')!=scope:raise OperationsRefused('state volume is not owned by this exact deployment root')
     for cid in filter(None,_run(engine,['ps','-aq']).splitlines()):
         container=json.loads(_run(engine,['inspect','--format','{{json .}}',cid]))
@@ -266,7 +268,7 @@ def deploy(pack:Path,root:Path,*,authorization:dict[str,Any],request_id:str,imag
             installed=delivery.validate_pack(package)
             if installed['candidate_sha256']!=packed['candidate_sha256']:raise OperationsRefused('sealed package source changed during install')
             if state_volume is not None:
-                labels=json.loads(_run(engine,['volume','inspect','--format','{{json .Labels}}',state_volume]))
+                labels=json.loads(_run(engine,['volume','inspect','--format','{{json .Labels}}',state_volume])) or {}
                 if labels.get(LABEL)!=OWNER or labels.get('io.omp.autoforge.state-root')!=hashlib.sha256(str(root.resolve()).encode()).hexdigest():raise OperationsRefused('state volume is not owned by this exact deployment root')
                 if migration_sql is not None and not authorization['allow_irreversible_migrations']:raise OperationsRefused('authorization does not permit schema migration')
                 database_result=_stateful_database(engine,image_id,state_volume,migration_sql,expected_version,target_version,root,helpername)
@@ -295,7 +297,7 @@ def deploy(pack:Path,root:Path,*,authorization:dict[str,Any],request_id:str,imag
                 try:secrets_module.cleanup_runtime_secrets(secret_manifest,audit_path=root/'secret-cleanup.jsonl')
                 except Exception as exc:raise OperationsRefused('private source cleanup failed after container safe copy') from exc
                 secret_manifest=None
-            tunnel=Tunnel(engine,cid,{'PATH':os.environ.get('PATH','')});deadline=time.monotonic()+45
+            tunnel=Tunnel(engine,cid,container_env.engine_env());deadline=time.monotonic()+45
             while time.monotonic()<deadline:
                 if stop_file and stop_file.exists():raise OperationsRefused('operator STOP requested')
                 if _health(tunnel,contract)==200:break
@@ -327,6 +329,11 @@ def deploy(pack:Path,root:Path,*,authorization:dict[str,Any],request_id:str,imag
             if isinstance(exc,Exception) and secret_values:
                 message=str(exc)
                 for value in secret_values.values():message=message.replace(value,'[REDACTED]')
+                # Keep the origin of a wrapped failure visible; the outer type still carries the
+                # refusal, but the traced line is what an operator needs to diagnose it.
+                origin=traceback.extract_tb(exc.__traceback__)[-1] if exc.__traceback__ else None
+                if origin is not None:
+                    message=f"{message} ({origin.filename.rsplit('/',1)[-1]}:{origin.lineno} in {origin.name})"
                 raise OperationsRefused(message) from None
             raise
         finally:
@@ -385,7 +392,7 @@ def transition(root:Path,*,authorization:dict[str,Any],image_id:str,engine:str,a
         source=next(iter(candidates),None)
         if source is None or not source.get('container_id'):raise OperationsRefused('target exact-image runtime is not owned and available')
         if source.get('state_volume'):
-            labels=json.loads(_run(engine,['volume','inspect','--format','{{json .Labels}}',source['state_volume']]))
+            labels=json.loads(_run(engine,['volume','inspect','--format','{{json .Labels}}',source['state_volume']])) or {}
             scope=hashlib.sha256(str(root.resolve()).encode()).hexdigest()
             if labels.get(LABEL)!=OWNER or labels.get('io.omp.autoforge.state-root')!=scope:raise OperationsRefused('state volume ownership changed from exact deployment root')
         package=root/'deployments'/revision
@@ -397,7 +404,7 @@ def transition(root:Path,*,authorization:dict[str,Any],image_id:str,engine:str,a
             info=json.loads(_run(engine,['inspect','--format','{{json .}}',live]))
             if info.get('Config',{}).get('Labels',{}).get(LABEL)!=OWNER or info.get('Config',{}).get('Labels',{}).get('io.omp.autoforge.revision')!=revision or info.get('Image')!=image_id or not info.get('State',{}).get('Running'):
                 raise OperationsRefused('secret-bearing target runtime is not the live exact owned revision')
-            tunnel=Tunnel(engine,live,{'PATH':os.environ.get('PATH','')})
+            tunnel=Tunnel(engine,live,container_env.engine_env())
             try:
                 if _health(tunnel,source['contract'])!=200:raise OperationsRefused('secret-bearing target health check failed; pointer unchanged')
                 proof=_probe(tunnel,source['contract'])
@@ -417,7 +424,7 @@ def transition(root:Path,*,authorization:dict[str,Any],image_id:str,engine:str,a
             checkcid=_run(engine,checkargv).splitlines()[0]
             checklabels=json.loads(_run(engine,['inspect','--format','{{json .Config.Labels}}',checkcid]))
             if checklabels.get(LABEL)!=OWNER:raise OperationsRefused('verification container ownership mismatch')
-            tunnel=Tunnel(engine,checkcid,{'PATH':os.environ.get('PATH','')})
+            tunnel=Tunnel(engine,checkcid,container_env.engine_env())
             try:
                 deadline=time.monotonic()+30
                 while time.monotonic()<deadline:

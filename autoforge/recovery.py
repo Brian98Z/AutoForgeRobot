@@ -16,6 +16,8 @@ import tomllib
 import tempfile
 import uuid
 
+import paths
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -174,7 +176,8 @@ def capture(state, destination):
         for file in ROOT.iterdir():
             if file.is_file() and (file.suffix in ('.py', '.md', '.toml', '.lock', '.cmd') or file.name == '.gitignore'):
                 add(file, Path(file.name))
-        add(ROOT / 'target/release/autoforge.exe', Path('target/release/autoforge.exe'))
+        binary = paths.release_binary(ROOT)
+        add(binary, Path('target/release') / binary.name)
         add_tree(ROOT / 'runtime', Path('runtime'))
         # Current Python workloads use stdlib only. Exclude unrelated installed application packages.
         pybase = Path(sys.base_prefix)
@@ -183,7 +186,7 @@ def capture(state, destination):
         for file in pybase.iterdir():
             if file.is_file() and file.suffix in ('.exe', '.dll', '.txt'):
                 add(file, Path('runtime/python') / file.name)
-        julia = ROOT / 'runtime/julia-1.13.3/bin/julia.exe'
+        julia = paths.julia_binary(ROOT)
         dependency_code = 'using Pkg, JSON3; println(JSON3.write([Dict("name"=>d.name,"source"=>d.source) for d in values(Pkg.dependencies()) if d.is_tracking_registry]))'
         deps = json.loads(command([julia, '--startup-file=no', f'--project={ROOT / "providers"}', '-e', dependency_code]))
         for dep in deps:
@@ -276,13 +279,13 @@ def run_restored(project, args):
     project = project.resolve()
     env = {k: v for k, v in os.environ.items() if not k.startswith(('AUTOFORGE_', 'JULIA_', 'PYTHON'))}
     env.update(AUTOFORGE_PROJECT=str(project), AUTOFORGE_PYTHON=str(project/'runtime/python/python.exe'),
-               AUTOFORGE_JULIA=str(project/'runtime/julia-1.13.3/bin/julia.exe'), AUTOFORGE_PROVIDER='offline',
+               AUTOFORGE_JULIA=str(paths.julia_binary(project)), AUTOFORGE_PROVIDER='offline',
                JULIA_DEPOT_PATH=str(project/'runtime/julia-depot'), JULIA_PKG_OFFLINE='true',
                CARGO_HOME=str(project/'runtime/cargo-home'), CARGO_NET_OFFLINE='true',
                PATH=str(project/'runtime/rust-toolchain/bin')+os.pathsep+os.environ.get('PATH',''))
     if not args:
         raise ValueError('controller arguments required')
-    return subprocess.call([str(project/'target/release/autoforge.exe'), *args], cwd=project, env=env)
+    return subprocess.call([str(paths.release_binary(project)), *args], cwd=project, env=env)
 
 
 def main():

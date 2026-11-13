@@ -5,11 +5,12 @@ import hashlib, json, os, re, sqlite3, subprocess, tempfile, time, uuid
 from pathlib import Path
 from typing import Any
 import application_builder
+import container_env
 
 class DatabaseFailure(ValueError): pass
 def _bounded_command(argv:list[str],data:bytes|None=None,timeout:int=60,limit:int=1048576,env:dict[str,str]|None=None)->tuple[int,bytes,bytes]:
     with tempfile.TemporaryFile() as out,tempfile.TemporaryFile() as err:
-        try: proc=subprocess.Popen(argv,stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL,stdout=out,stderr=err,env=env or {'PATH':os.environ.get('PATH','')},close_fds=True)
+        try: proc=subprocess.Popen(argv,stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL,stdout=out,stderr=err,env=env or container_env.engine_env(),close_fds=True)
         except OSError as exc: raise DatabaseFailure(f'command unavailable: {argv[0]}') from exc
         try:
             if data is not None:
@@ -191,10 +192,10 @@ def postgres_accept(engine:str,handle:dict[str,Any],migration_sql:str,rollback_s
     if backup_code: raise DatabaseFailure('pg_dump backup failed: '+backup_err[:2048].decode('utf-8','replace'))
     restore_code,_,restore_err=_bounded_command([engine,'exec','-i','-e','PGPASSWORD='+password,cid,'pg_restore','--clean','--if-exists','-U',user,'-d',database],backup_data,timeout=timeout,limit=65536)
     if restore_code: raise DatabaseFailure('pg_restore backup recovery failed: '+restore_err[:2048].decode('utf-8','replace'))
-    subprocess.run([engine,'restart','--time','10',cid],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,timeout=15,check=True,env={'PATH':os.environ.get('PATH','')},close_fds=True)
+    subprocess.run([engine,'restart','--time','10',cid],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,timeout=15,check=True,env=container_env.engine_env(),close_fds=True)
     deadline=time.monotonic()+30
     while time.monotonic()<deadline:
-        ready=subprocess.run([engine,'exec',cid,'pg_isready','-U',user,'-d',database],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=5,check=False,env={'PATH':os.environ.get('PATH','')},close_fds=True)
+        ready=subprocess.run([engine,'exec',cid,'pg_isready','-U',user,'-d',database],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=5,check=False,env=container_env.engine_env(),close_fds=True)
         if b'accepting connections' in ready.stdout: break
         time.sleep(.3)
     else: raise DatabaseFailure('PostgreSQL did not become ready after container restart')
@@ -244,6 +245,6 @@ def postgres_start(engine:str,image:str,timeout:int=30)->dict[str,Any]:
 
 def postgres_stop(engine:str,container:str,network:str|None=None,volume:str|None=None)->None:
     if not isinstance(container,str) or not re.fullmatch(r'autoforge-db-[0-9a-f]{32}',container): raise DatabaseFailure('refusing non-AutoForge database container identity')
-    subprocess.run([engine,'rm','-f',container],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10,check=False,env={'PATH':os.environ.get('PATH','')},close_fds=True)
-    if volume is not None and re.fullmatch(r'autoforge-db-vol-[0-9a-f]{32}',volume): subprocess.run([engine,'volume','rm',volume],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10,check=False,env={'PATH':os.environ.get('PATH','')},close_fds=True)
-    if network is not None and re.fullmatch(r'autoforge-db-net-[0-9a-f]{32}',network): subprocess.run([engine,'network','rm',network],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10,check=False,env={'PATH':os.environ.get('PATH','')},close_fds=True)
+    subprocess.run([engine,'rm','-f',container],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10,check=False,env=container_env.engine_env(),close_fds=True)
+    if volume is not None and re.fullmatch(r'autoforge-db-vol-[0-9a-f]{32}',volume): subprocess.run([engine,'volume','rm',volume],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10,check=False,env=container_env.engine_env(),close_fds=True)
+    if network is not None and re.fullmatch(r'autoforge-db-net-[0-9a-f]{32}',network): subprocess.run([engine,'network','rm',network],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10,check=False,env=container_env.engine_env(),close_fds=True)

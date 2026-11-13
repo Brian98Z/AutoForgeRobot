@@ -12,12 +12,11 @@ from pathlib import Path
 import sys
 import urllib.request
 import uuid
-
 import agent_budget
 import agent_runtime
 import agent_session
-
 ROOT = Path(__file__).resolve().parents[1]
+MODULES = Path(agent_runtime.__file__).resolve().parent
 MODEL_PROFILES = {
     "quality": ("http://127.0.0.1:8081/v1", r"H:\ComfyUI_Mie_2026_V8.0\ComfyUI\models\LLM\Qwen3.6-35B-A3B\Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ4_NL.gguf"),
     "speed": ("http://127.0.0.1:8084/v1", r"H:\ComfyUI_Mie_2026_V8.0\ComfyUI\models\text_encoders\Qwen\Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf"),
@@ -42,11 +41,8 @@ CASES = {
         ],
     },
 }
-
-
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
 def _events(path: Path) -> list[dict]:
     rows = []
     with path.open(encoding="utf-8") as stream:
@@ -54,8 +50,6 @@ def _events(path: Path) -> list[dict]:
             if line.strip():
                 rows.append(json.loads(line))
     return rows
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", choices=sorted(CASES), default="composite", help="independent fresh syntax case; composite remains the default")
@@ -101,10 +95,12 @@ def main() -> int:
         candidate_digest = hashlib.sha256(json.dumps(initial, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         report["initial_candidate_sha256"] = candidate_digest
         report["initial_file_sha256"] = {f["path"]: hashlib.sha256(f["content"].encode()).hexdigest() for f in initial["files"]}
-        report["source_sha256"] = {name: _digest(ROOT / name) for name in
-                                    ("agent_live_check.py", "agent_runtime.py", "agent_transport.py", "agent_tools.py",
-                                     "agent_session.py", "agent_budget.py", "application_builder.py",
-                                     "application_checkpoint.py", "applications.py", "fixtures/agent_syntax_builder.py")}
+        report["source_sha256"] = {"agent_live_check.py": _digest(Path(__file__)),
+                                   "fixtures/agent_syntax_builder.py": _digest(ROOT / "fixtures" / "agent_syntax_builder.py"),
+                                   **{name: _digest(MODULES / name) for name in
+                                      ("agent_runtime.py", "agent_transport.py", "agent_tools.py",
+                                       "agent_session.py", "agent_budget.py", "application_builder.py",
+                                       "application_checkpoint.py", "applications.py")}}
         report["tool_schema_sha256"] = hashlib.sha256(json.dumps(
             agent_runtime.TOOLS, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
         result = agent_runtime.run({"schema": 1, "goal": args.goal, "references": []}, [],
@@ -174,7 +170,5 @@ def main() -> int:
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"run_dir": str(output), "status": report["status"], "report": str(report_path)}, ensure_ascii=False))
     return 0 if report["status"] == "PASS" else 2
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

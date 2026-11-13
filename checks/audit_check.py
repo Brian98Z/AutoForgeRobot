@@ -10,10 +10,7 @@ import subprocess
 import sys
 import uuid
 import iterate
-
 ROOT=Path(__file__).resolve().parents[1]
-
-
 def main():
     root=ROOT/'bootstrap-runs'/('audit-check-'+uuid.uuid4().hex[:12]);root.mkdir(parents=True)
     report={'status':'RUNNING','checks':[]}
@@ -57,7 +54,7 @@ def main():
         iterate.main(['--rounds','1','--resume',str(interrupted)])
         passed('committed-round-interruption-does-not-compensate')
         crash=root/'bootstrap-window';crash.mkdir();(crash/'events').mkdir();(crash/'tasks').mkdir()
-        p=subprocess.run([sys.executable,str(ROOT / 'autoforge' / 'iterate.py'),'--rounds','1','--output',str(crash),'--plan-only'],cwd=ROOT,capture_output=True,encoding='utf-8',check=True)
+        p=subprocess.run([sys.executable,str(Path(iterate.__file__)),'--rounds','1','--output',str(crash),'--plan-only'],cwd=ROOT,capture_output=True,encoding='utf-8',check=True)
         config=json.loads(p.stdout)['config'];config.pop('config_sha256')
         (crash/'run-intent.json').write_bytes(iterate.canonical(config)+b'\n')
         call('init',crash/'state');key=(crash/'state/public.key').read_bytes()
@@ -70,6 +67,4 @@ def main():
     finally:
         (root/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
         print('Evidence:',root/'report.json',flush=True)
-
-
 if __name__=='__main__':main()

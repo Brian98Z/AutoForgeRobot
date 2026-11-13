@@ -21,12 +21,14 @@ python autoforge/application_build.py --help
 
 Application execution requires a Linux Docker/Podman engine and a trusted local Python image.
 
-## Single-file controller executable
+## Controller executable packaging
 
-Build a Windows onefile executable with Python 3.11 and PyInstaller 6.22.3:
+Build a Windows executable with Python 3.11 and PyInstaller 6.22.3; POSIX packages must be built inside a Linux image that also carries `binutils`:
 
 ```bash
-python autoforge/build_exe.py
+python autoforge/build_exe.py                 # onefile -> dist/autoforge.exe
+python autoforge/build_exe.py --mode onedir   # onedir  -> dist-onedir/autoforge/
+python autoforge/package_release.py --platform windows --version 0.1.0-feedback-20261113
 ```
 
 The build writes `dist/autoforge.exe`; use `--list` for its actual bundled inventory. Windows multiprocessing workers are handled before custom module selection; bundled script and `-c` routes remain available. The 2026-11-09 local rebuild includes `agent_mcp`. Playwright is explicitly excluded: browser acceptance requires the Python source installation, Playwright and an installed browser. The new EXE is unsigned; its historical self-signed certificate does not sign this rebuild.

@@ -6,8 +6,10 @@ import subprocess
 import tempfile
 import time
 
+import paths
+
 PROJECT = pathlib.Path(__file__).resolve().parents[1]
-EXE = PROJECT / 'target/release/autoforge.exe'
+EXE = paths.release_binary(PROJECT)
 ENV = dict(os.environ, AUTOFORGE_PROJECT=str(PROJECT), AUTOFORGE_PROVIDER='offline')
 RESULTS = []
 

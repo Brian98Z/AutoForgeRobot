@@ -11,8 +11,6 @@ import tempfile
 from unittest.mock import patch
 import agent_runtime as runtime
 import agent_session
-
-
 def main():
     request = {'schema': 1, 'goal': 'coarse oracle controller contract', 'references': []}
     candidate = {**request, 'files': [{'path': 'main.py', 'content': '# never executed\n'}]}
@@ -54,6 +52,4 @@ def main():
         contract.write_text('{"changed":true}')
         assert runtime._configuration(request, [], argv, limits, ['validate']) != before
     print(json.dumps({'status': 'PASS', 'scope': 'controller outcome regression, no candidate execution', 'checks': outcomes, 'identity': 'nested trusted adapter/contract bound; mutable ledger bytes excluded'}))
-
-
 if __name__ == '__main__': main()

@@ -6,8 +6,8 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 
 import json,sys,tempfile,hashlib,subprocess
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "autoforge"))
 import references,application_builder,reference_reconstruction as runner
-
 import application_builder as builder
 def source_path_check(root):
  src=root/'main.py';src.write_text('import json,sys\nfor line in sys.stdin: print(json.dumps({"ok":json.loads(line)["x"]}))\n',encoding='utf-8')
@@ -26,10 +26,8 @@ def source_path_check(root):
   assert runner.evaluate(store,pkg['package_id'],cand,cp,engine='docker',image='sha256:'+'a'*64)['status']=='PASS'
   assert runner.evaluate(store,pkg['package_id'],wrong,cp,engine='docker',image='sha256:'+'a'*64)['status']=='FAIL'
  finally: builder.preflight=oldpre;builder._container=oldrun
-
-
 def stateful_source_check(root):
-    fixture=Path(__file__).resolve().parents[1] / "fixtures"/"stateful_reference"
+    fixture=Path(__file__).resolve().parents[1]/"fixtures"/"stateful_reference"
     store=root/"stateful-store"
     pkg=references.ingest(fixture,store,"AutoForge stateful source fixture authored for this task","MIT",kind="source")
     contract=json.loads((fixture/"contract.json").read_text(encoding="utf-8"));contract["reference_package_id"]=pkg["package_id"]

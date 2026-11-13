@@ -6,7 +6,6 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 
 import json
 import benchmark_independent_check as check
-
 def main():
     items=[{'id':'a','quantity':4},{'id':'b','quantity':4},{'id':'c','quantity':-2}]
     assert [x['id'] for x in check.expected('inventory-order-001',{'op':'sort','items':items})['items']]==['a','b','c']

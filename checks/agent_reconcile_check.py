@@ -9,14 +9,10 @@ from pathlib import Path
 import agent_reconcile as R
 import agent_session as S
 import application_checkpoint as C
-
-
 def refuse(fn):
     try:fn()
     except (ValueError,OSError):return
     raise AssertionError('unsafe reconciliation accepted')
-
-
 def main():
     with tempfile.TemporaryDirectory(prefix='reconcile-check-') as td:
         out=Path(td);token=S.create_control(out,'check')

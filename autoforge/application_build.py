@@ -13,6 +13,9 @@ import application_proposer as proposer
 from application_checkpoint import regular_chain
 
 ROOT = Path(__file__).resolve().parents[1]
+# Sibling modules live beside this file. The frozen dispatcher resolves a script by basename,
+# so an exact source path works both frozen and from source; ROOT/'x.py' only worked frozen.
+MODULES = Path(__file__).resolve().parent
 
 
 def inspect(request_path: Path, contract_path: Path, reference_store: Path,
@@ -173,11 +176,11 @@ def main() -> int:
         # Recheck oracle bytes before passing its absolute path to the trusted builder.
         if hashlib.sha256(args.contract.read_bytes()).hexdigest()!=report['checks']['inputs']['contract_sha256']:
             raise ValueError('contract changed after preflight')
-        proposal=[sys.executable,str(ROOT / 'autoforge' / 'application_proposer.py')]
-        build=[sys.executable,str(ROOT / 'autoforge' / 'application_builder.py'),'--engine',args.engine,'--image',args.image,
+        proposal=[sys.executable,str(MODULES/'application_proposer.py')]
+        build=[sys.executable,str(MODULES/'application_builder.py'),'--engine',args.engine,'--image',args.image,
                '--contract',str(args.contract.resolve())]
         if args.adapter_kind == 'http':
-            build=[sys.executable,str(ROOT / 'autoforge' / 'application_service.py'),'--adapter','--engine',args.engine,
+            build=[sys.executable,str(MODULES/'application_service.py'),'--adapter','--engine',args.engine,
                    '--image',args.image,'--contract',str(args.contract.resolve()),'--command-json',args.service_command]
             if args.browser_contract is not None:
                 build += ['--browser-contract',str(args.browser_contract.resolve()),'--browser-output',str(args.browser_output.resolve()),'--authorize-browser']
@@ -190,7 +193,7 @@ def main() -> int:
                 protected.append(args.project.resolve())
             if any(ledger==p or ledger in p.parents or p in ledger.parents for p in protected):
                 raise ValueError('oracle ledger must be separate from candidate/output and public inputs')
-            build=[sys.executable,str(ROOT / 'autoforge' / 'application_oracle.py'),'--ledger',str(ledger),'--contract',str(args.contract.resolve()),
+            build=[sys.executable,str(MODULES/'application_oracle.py'),'--ledger',str(ledger),'--contract',str(args.contract.resolve()),
                    '--contract-sha256',report['checks']['inputs']['contract_sha256'],
                    '--max-queries',str(args.max_oracle_queries),'--builder-argv',json.dumps(build,separators=(',',':'))]
         if args.mode=='agent':

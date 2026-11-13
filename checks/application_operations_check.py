@@ -1,5 +1,4 @@
 """Regression checks for release authorization, measurement policy and integrity boundaries.
-
 Real container execution is intentionally separate: run application_operations_live_check.py
 with explicit local engine/image authorization to collect deployment evidence.
 """
@@ -12,7 +11,6 @@ import hashlib,json,tempfile
 from pathlib import Path
 import application_operations as ops
 import application_quality as quality
-
 def main():
     with tempfile.TemporaryDirectory(prefix='autoforge-operations-check-') as td:
         root=Path(td)/'deploy';root.mkdir()

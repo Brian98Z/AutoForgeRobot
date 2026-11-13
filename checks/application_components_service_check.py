@@ -10,7 +10,6 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import application_components as components
 import application_components_service as service
-
 TOKEN='component-service-smoke-secret-'+'a'*32
 class Receiver(BaseHTTPRequestHandler):
     seen=[]
@@ -19,7 +18,6 @@ class Receiver(BaseHTTPRequestHandler):
     def do_POST(self):
         body=self.rfile.read(int(self.headers.get('Content-Length','0')));type(self).seen.append(('POST',self.path,body));self.send_response(200);self.end_headers();self.wfile.write(b'{"accepted":true}')
     def log_message(self,*args):pass
-
 def request(port,method,path,obj=None,token=TOKEN):
     body=None if obj is None else json.dumps(obj,separators=(',',':')).encode()
     conn=http.client.HTTPConnection('127.0.0.1',port,timeout=5)
@@ -27,7 +25,6 @@ def request(port,method,path,obj=None,token=TOKEN):
     if body is not None:headers['Content-Type']='application/json'
     conn.request(method,path,body,headers);r=conn.getresponse();data=r.read();status=r.status;ctype=r.getheader('Content-Type');conn.close()
     return status,ctype,data
-
 def main():
   import hashlib
   report_path=Path('bootstrap-runs')/('components-service-live-'+__import__('uuid').uuid4().hex+'.json')
@@ -90,10 +87,8 @@ def main():
       raw=json.dumps(report,sort_keys=True,separators=(',',':')).encode();report['sha256']=hashlib.sha256(raw).hexdigest();report_path.parent.mkdir(parents=True,exist_ok=True);report_path.write_text(json.dumps(report,sort_keys=True,indent=2)+'\n',encoding='utf-8');print(json.dumps({'status':'PASS','report':str(report_path),'sha256':report['sha256']}))
     finally:
       srv.shutdown();srv.server_close();receiver.shutdown();receiver.server_close()
-
 def write_import(root,data):
     p=root/'export.json';p.write_bytes(data);return p
-
 def compose_business_event(runtime, event):
     """Trusted operator-side composition; never injects code into the generated app."""
     if not isinstance(event, dict) or set(event) != {'title', 'idempotency_key'}:

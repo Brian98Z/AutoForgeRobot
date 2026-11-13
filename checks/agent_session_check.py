@@ -9,22 +9,16 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-
 import agent_session as session
 from application_checkpoint import ResumeRefused, canonical
-
-
 def check(condition, message):
     if not condition:
         raise AssertionError(message)
-
-
 def main():
     with tempfile.TemporaryDirectory(prefix="agent-session-check-") as tmp:
         root = Path(tmp)
         output = root / "run"
         output.mkdir()
-
         # Digest envelope round-trip, duplicate-key rejection, and tamper rejection.
         state = {"session_id": "s-1", "candidate": {"schema": 1, "goal": "goal", "files": [], "references": []}, "history": []}
         session.save(output, state)
@@ -63,7 +57,6 @@ agent_session.save(out,{\"session_id\":\"s-1\",\"candidate\":candidate})
             raise AssertionError("tampered digest accepted")
         except ResumeRefused:
             pass
-
         # Journal cursor, monotonic sequence, bounded reads, durable resume,
         # and only partial final-line recovery.
         with session.EventJournal(output) as journal:
@@ -85,7 +78,6 @@ agent_session.save(out,{\"session_id\":\"s-1\",\"candidate\":candidate})
             raise AssertionError("corrupt complete event line accepted")
         except ResumeRefused:
             pass
-
         # Control authentication, expiry/session binding, deduplication and concurrent numbering.
         control_out = root / "controls"
         control_out.mkdir()
@@ -120,7 +112,6 @@ agent_session.save(out,{\"session_id\":\"s-1\",\"candidate\":candidate})
             raise AssertionError("tampered control accepted")
         except ResumeRefused:
             pass
-
         # Compaction retains objectives/correction and complete last group, rejects orphan calls.
         old_group = [{"role": "assistant", "content": None, "tool_calls": [{"id": "old", "type": "function", "function": {"name": "x", "arguments": "{}"}}]}, {"role": "tool", "tool_call_id": "old", "content": '{"error":"old failure"}' + ("x" * 5000)}]
         last_group = [{"role": "assistant", "content": None, "tool_calls": [{"id": "last", "type": "function", "arguments": "{}"}]}, {"role": "tool", "tool_call_id": "last", "content": '{"ok":true}'}]
@@ -140,7 +131,5 @@ agent_session.save(out,{\"session_id\":\"s-1\",\"candidate\":candidate})
         except ValueError:
             pass
     print("agent session filesystem checks passed")
-
-
 if __name__ == "__main__":
     main()

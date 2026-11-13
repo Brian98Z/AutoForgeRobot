@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Build one single-file Windows executable for the AutoForge controller.
+"""Build the AutoForge controller executable.
+
+Two layouts are supported and differ only in start-up cost:
+
+``onefile``  one self-contained .exe; every run unpacks the payload to a temporary
+             directory first, which costs roughly 700 ms for this module set.
+``onedir``   a folder whose executable starts without unpacking (about 90 ms measured);
+             the folder must be shipped as a whole.
 
 The controller dispatches module CLIs dynamically, so every production module is a
 hidden import. Playwright is imported lazily by application_browser and is therefore
@@ -8,14 +15,15 @@ to start.
 """
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DIST = ROOT / "dist"
-WORK = ROOT / "build" / "pyinstaller"
+WINDOWS_EXE = "autoforge.exe" if os.name == "nt" else "autoforge"
 
 
 def hidden_imports() -> list[str]:
@@ -32,30 +40,40 @@ def write_manifest() -> Path:
     return target
 
 
-def build() -> int:
+def build(mode: str = "onefile", dist_base: str = "dist") -> int:
     manifest = write_manifest()
+    onedir = mode == "onedir"
+    distpath = ROOT / (f"{dist_base}-onedir" if onedir else dist_base)
+    platform = "win" if os.name == "nt" else "posix"
+    workroot = ROOT / "build" / f"pyinstaller-{platform}"
     argv = [
         sys.executable, "-m", "PyInstaller",
         str(ROOT / "autoforge" / "autoforge_cli.py"),
-        "--onefile", "--console", "--clean", "--noconfirm",
+        "--onedir" if onedir else "--onefile",
+        "--console", "--clean", "--noconfirm",
         "--name", "autoforge",
-        "--distpath", str(DIST),
-        "--workpath", str(WORK),
-        "--specpath", str(ROOT / "build"),
-        "--add-data", f"{ROOT / 'fixtures'};fixtures",
-        "--add-data", f"{ROOT / 'src'};src",
-        "--add-data", f"{manifest};.",
+        "--distpath", str(distpath),
+        "--workpath", str(workroot / ("onedir" if onedir else "onefile")),
+        "--specpath", str(workroot),
+        "--add-data", f"{ROOT / 'fixtures'}{os.pathsep}fixtures",
+        "--add-data", f"{ROOT / 'src'}{os.pathsep}src",
+        "--add-data", f"{manifest}{os.pathsep}.",
         "--paths", str(ROOT / "autoforge"),
     ]
     for excluded in ("numpy", "tkinter", "distutils", "setuptools", "pip", "matplotlib", "playwright"):
         argv += ["--exclude-module", excluded]
     for source in sorted((ROOT / "autoforge").glob("*.py")):
-        argv += ["--add-data", f"{source};."]
+        argv += ["--add-data", f"{source}{os.pathsep}."]
     for name in hidden_imports():
         argv += ["--hidden-import", name]
-    print(f"building {len(hidden_imports())} modules -> {DIST / 'autoforge.exe'}", flush=True)
+    target = distpath / "autoforge" / WINDOWS_EXE if onedir else distpath / WINDOWS_EXE
+    print(f"building {len(hidden_imports())} modules ({mode}) -> {target}", flush=True)
     return subprocess.call(argv, cwd=ROOT)
 
 
 if __name__ == "__main__":
-    raise SystemExit(build())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--mode", choices=("onefile", "onedir"), default="onefile")
+    parser.add_argument("--dist", default="dist", help="output directory name under the project root")
+    parsed = parser.parse_args()
+    raise SystemExit(build(parsed.mode, parsed.dist))

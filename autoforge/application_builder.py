@@ -17,6 +17,8 @@ import time
 import uuid
 from typing import Any
 
+import container_env
+
 MAX_INPUT = 4_194_304
 MAX_REPORT = 1_048_576
 MAX_OUT = 1_048_576
@@ -226,7 +228,7 @@ def _contract(raw: Any) -> list[dict[str, Any]]:
 
 def _run(argv: list[str], timeout: int = 20) -> bytes:
     try:
-        result = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, check=False, env={"PATH": os.environ.get("PATH", "")}, close_fds=True)
+        result = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, check=False, env=container_env.engine_env(), close_fds=True)
     except FileNotFoundError as exc:
         raise MissingPrerequisite(f"container engine unavailable: {argv[0]}") from exc
     except subprocess.TimeoutExpired as exc:
@@ -261,7 +263,7 @@ def _container(engine: str, image: str, root: Path, payload: bytes, timeout: int
         entrypoint = ["python", "-I", "-c", f"import runpy,signal,sys;signal.alarm({timeout});sys.path.insert(0,'/candidate');runpy.run_path('/candidate/main.py',run_name='__main__')"]
     name = "autoforge-" + uuid.uuid4().hex
     cmd = [engine, "run", "--rm", "--name", name, "--network=none", "--read-only", "--user=65534:65534", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=64", "--memory=256m", "--cpus=1", "--mount", f"type=bind,src={root},dst=/candidate,readonly", "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777", "--workdir", "/candidate", "--interactive", "--entrypoint", *entrypoint[:1], image, *entrypoint[1:]]
-    env = {"PATH": os.environ.get("PATH", "")}
+    env = container_env.engine_env()
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, close_fds=True, bufsize=0)
     out = bytearray(); err = bytearray(); overflow = [False]
     import threading

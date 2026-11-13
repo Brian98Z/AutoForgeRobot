@@ -8,7 +8,6 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 import argparse, json, socket, threading
 from pathlib import Path
 import application_service as service
-
 def host_guard_check():
     listener=socket.socket(); listener.bind(('127.0.0.1',0)); listener.listen(1); port=listener.getsockname()[1]
     secret='fixture-secret-must-not-leak'
@@ -54,7 +53,6 @@ def secret_mount_guard_check():
         else: raise AssertionError('mutated private secret file accepted')
     return 'private secret mount descriptor is integrity-bound and absent secret refs are refused'
 import application_builder
-
 def missing_entrypoint_check():
     import tempfile
     import applications
@@ -72,7 +70,6 @@ def missing_entrypoint_check():
         except application_builder.BuildFailure: pass
         else: raise AssertionError('missing entrypoint bypassed candidate integrity')
     return 'missing HTTP entrypoint is bound FAIL before dispatch; tampering still rejected'
-
 def main() -> int:
     result={'schema':1,'host_logic':{'status':'PASS','checks':[host_guard_check(),invalid_json_guard_check(),secret_mount_guard_check(),missing_entrypoint_check()],'limitations':['Host logic only; no service container or HTTP CRUD behavior was exercised.']},'container_acceptance':'NOT_RUN'}
     print(json.dumps(result,ensure_ascii=False)); return 0

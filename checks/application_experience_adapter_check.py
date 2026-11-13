@@ -10,19 +10,15 @@ import json
 import sys
 import tempfile
 from pathlib import Path
-
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "autoforge"))
 import application_experience_adapter as adapter
 import application_learning as learning
 import applications
 import references
 import experience_complex_evaluation as complex_evaluation
-
-
 def check(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
-
-
 def ingest_json(root: Path, store: Path, filename: str, value: dict) -> dict:
     source = root / filename
     source.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
@@ -31,8 +27,6 @@ def ingest_json(root: Path, store: Path, filename: str, value: dict) -> dict:
     entry = package["files"][0]
     return {"package_id": result["package_id"], "path": entry["path"],
             "sha256": entry["sha256"], "permission": "inspect"}
-
-
 def run_artifact(root: Path, run_id: str, task_id: str, status: str, validation_status: str) -> Path:
     run = root / run_id
     run.mkdir()
@@ -44,8 +38,6 @@ def run_artifact(root: Path, run_id: str, task_id: str, status: str, validation_
     ]
     (run / "events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return run
-
-
 def main() -> None:
     rows = [{'sample': sample, 'target': target, 'arm': arm, 'independent_pass': True, 'usage_complete': True,
              'calls': 2 if arm == 'baseline' else 1, 'tokens': 50 if arm == 'baseline' else 25,
@@ -261,7 +253,5 @@ def main() -> None:
         mismatch = adapter.compare(run_a, run_c)
         check(mismatch["sample_match"] is False and mismatch["benefit"] == "not_proven" and
               "validation_count_delta" not in mismatch, "mismatched task was treated as paired benefit")
-
-
 if __name__ == "__main__":
     main()

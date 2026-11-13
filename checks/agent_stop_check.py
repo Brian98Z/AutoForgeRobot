@@ -15,8 +15,6 @@ from unittest.mock import patch
 import agent_runtime
 import agent_session
 import application_policy
-
-
 class IdleProvider(BaseHTTPRequestHandler):
     arrived = threading.Event()
     release = threading.Event()
@@ -32,8 +30,6 @@ class IdleProvider(BaseHTTPRequestHandler):
             response = {'choices': [{'index': 0, 'delta': {'role': 'assistant', 'tool_calls': [call]}, 'finish_reason': 'tool_calls'}]}
             self.wfile.write(b'data: ' + json.dumps(response).encode() + b'\n\ndata: [DONE]\n\n'); self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError): pass
-
-
 def main():
     server = ThreadingHTTPServer(('127.0.0.1', 0), IdleProvider)
     server.daemon_threads = True
@@ -83,6 +79,4 @@ def main():
         IdleProvider.release.set(); server.shutdown(); server.server_close(); worker.join(timeout=2)
     timings.pop('start', None)
     print(json.dumps({'status': 'PASS', 'scope': 'real loopback HTTP/controller stop; local regression deadline 3 seconds, not production worst-case bound; no candidate executed', 'timings': timings, 'checks': ['late streamed write not committed', 'capability revoked after stop', 'terminal resume makes no request', 'expiry at exact boundary denied'], 'state_loss': 'no committed tool state lost; uncommitted model response discarded'}))
-
-
 if __name__ == '__main__': main()

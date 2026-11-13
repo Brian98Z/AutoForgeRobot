@@ -11,6 +11,7 @@ import argparse, hashlib, http.client, json, math, os, re, shlex, shutil, socket
 from pathlib import Path
 from typing import Any
 import application_checkpoint
+import container_env
 
 MAX_INPUT=4_194_304
 MAX_REPORT=1_048_576
@@ -263,7 +264,7 @@ def _realtime(manifest,contract,authority,engine,image,command,timeout):
     try:info=application_service.preflight(engine,image)
     except Exception as e:raise PlatformRefused('configured exact local Linux service image/engine unavailable: '+str(e)) from e
     name='autoforge-rt-'+uuid.uuid4().hex;cid=None;tunnel=None
-    runenv={'PATH':os.environ.get('PATH','')}
+    runenv=container_env.engine_env()
     def run(argv,seconds=15):
         try:r=subprocess.run(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=seconds,check=False,env=runenv,close_fds=True)
         except (OSError,subprocess.TimeoutExpired) as e:raise PlatformRefused('isolated realtime service command unavailable or timed out') from e

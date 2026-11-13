@@ -7,7 +7,6 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'autoforge'))
 import hashlib,tempfile,stat
 from pathlib import Path
 import application_dependencies as d
-
 def main():
  with tempfile.TemporaryDirectory(prefix='deps-check-') as td:
   root=Path(td); src=root/'artifact.whl'; src.write_bytes(b'wheel-bytes'); sha=hashlib.sha256(src.read_bytes()).hexdigest(); cache=root/'cache'

@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse,hashlib,json,os,subprocess,sys,time,uuid
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
+# Sibling drivers live beside this module; ROOT only worked for the frozen dispatcher.
+MODULES=Path(__file__).resolve().parent
 MODEL_PROFILES={
  'quality':('http://127.0.0.1:8081/v1',r'H:\ComfyUI_Mie_2026_V8.0\ComfyUI\models\LLM\Qwen3.6-35B-A3B\Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ4_NL.gguf'),
  'speed':('http://127.0.0.1:8084/v1',r'H:\ComfyUI_Mie_2026_V8.0\ComfyUI\models\text_encoders\Qwen\Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf'),
@@ -26,7 +28,7 @@ def main():
  run=ROOT/'bootstrap-runs'/('benchmark-'+uuid.uuid4().hex);run.mkdir(parents=True,exist_ok=False); reports=[]
  for task in selected:
   tid=task['task_id']; work=run/tid;work.mkdir(); req={"schema":1,"goal":task['public_input']+" Create main.py only, read JSON objects one per input line, print one JSON response per line and no other stdout. Implement exactly this public contract.","references":[]};rp=work/'request.json';rp.write_text(json.dumps(req,ensure_ascii=False),encoding='utf-8'); cp=work/'contract.json';cp.write_text(json.dumps(contracts[tid]),encoding='utf-8'); refs=work/'references';refs.mkdir();out=work/'session'
-  cmd=[sys.executable,str(ROOT / 'autoforge' / 'application_build.py'),'run','--request',str(rp),'--contract',str(cp),'--reference-store',str(refs),'--engine','docker','--image',IMAGE,'--output',str(out),'--mode','agent','--max-turns','12','--token-budget','500000','--time-budget','200','--tool-budget','64','--allow-model','--trusted-adapter']
+  cmd=[sys.executable,str(MODULES/'application_build.py'),'run','--request',str(rp),'--contract',str(cp),'--reference-store',str(refs),'--engine','docker','--image',IMAGE,'--output',str(out),'--mode','agent','--max-turns','12','--token-budget','500000','--time-budget','200','--tool-budget','64','--allow-model','--trusted-adapter']
   started=time.monotonic();proc=subprocess.run(cmd,cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=220,check=False,env={**os.environ,'AUTOFORGE_API_BASE':base_url,'AUTOFORGE_MODEL':model,'AUTOFORGE_MODEL_PROFILE':a.model_profile,'AUTOFORGE_API_KEY':'','AUTOFORGE_TOOL_CHOICE':'auto'}); elapsed=time.monotonic()-started
   try:cli=json.loads(proc.stdout)
   except ValueError:cli=None

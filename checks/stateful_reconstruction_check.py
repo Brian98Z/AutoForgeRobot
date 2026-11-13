@@ -9,8 +9,6 @@ import argparse, json, sys
 from pathlib import Path
 import application_builder, application_proposer
 import stateful_reconstruction_live_driver
-
-
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--store", required=True)
@@ -37,7 +35,5 @@ def main(argv=None) -> int:
         print(json.dumps({"status": "BLOCKED", "reason": "application_build model endpoint is not configured or transport is disallowed; set AUTOFORGE_API_BASE/AUTOFORGE_MODEL and permitted credentials", "model_configuration": model}, ensure_ascii=False))
         return 3
     return stateful_reconstruction_live_driver.main_from_args(args)
-
-
 if __name__ == "__main__":
     raise SystemExit(main())
