@@ -5,8 +5,8 @@ Run ``autoforge/build_exe.py`` for the target platform first; this script only c
 archives and hashes. Archives carry explicit POSIX modes because a Windows host cannot
 report Linux executable bits.
 
-    python autoforge/package_release.py --platform windows --version 0.1.0-feedback-20261113
-    python autoforge/package_release.py --platform linux   --version 0.1.0-feedback-20261113
+    python autoforge/package_release.py --platform windows --version 0.1.1
+    python autoforge/package_release.py --platform linux   --version 0.1.1
 """
 from __future__ import annotations
 

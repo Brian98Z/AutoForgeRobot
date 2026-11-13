@@ -26,13 +26,13 @@ python autoforge/application_capabilities.py matrix
 
 ## Download
 
-Current release: `v0.1.0-feedback-20261113` — see [latest release](https://github.com/Brian98Z/AutoForgeRobot/releases/latest)
+Current release: `v0.1.1` — see [latest release](https://github.com/Brian98Z/AutoForgeRobot/releases/latest)
 and verify every file against the attached `SHA256SUMS.txt`. Packages are **unsigned**.
 
 | Platform | Single file | Folder (fast start) |
 | --- | --- | --- |
-| Windows x64 | `autoforge-0.1.0-feedback-20261113-windows-x64.exe` (~750 ms start) | `…-windows-x64-onedir.zip` (~85 ms) |
-| Linux x64 | `autoforge-0.1.0-feedback-20261113-linux-x64.tar.gz` (~310 ms) | `…-linux-x64-onedir.tar.gz` (~175 ms) |
+| Windows x64 | `autoforge-0.1.1-windows-x64.exe` (~750 ms start) | `…-windows-x64-onedir.zip` (~85 ms) |
+| Linux x64 | `autoforge-0.1.1-linux-x64.tar.gz` (~310 ms) | `…-linux-x64-onedir.tar.gz` (~175 ms) |
 
 The single-file builds unpack their payload on every start; the onedir builds are extracted once and are
 roughly nine times faster to launch. GitHub's auto-generated Source code archives are not installers.
@@ -54,7 +54,7 @@ roughly nine times faster to launch. GitHub's auto-generated Source code archive
 ```bash
 python autoforge/build_exe.py                 # onefile -> dist/autoforge.exe
 python autoforge/build_exe.py --mode onedir   # onedir  -> dist-onedir/autoforge/
-python autoforge/package_release.py --platform windows --version 0.1.0-feedback-20261113
+python autoforge/package_release.py --platform windows --version 0.1.1
 ```
 
 PyInstaller cannot cross-compile; Linux packages are built inside a Python 3.11 image that also carries
