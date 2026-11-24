@@ -50,6 +50,34 @@ def _oracle_builder(argv):
     return len(argv) > 1 and Path(argv[1]).resolve() == Path(__file__).with_name('application_oracle.py').resolve()
 
 
+_ADAPTER_INPUT_REFUSAL = 2
+
+
+def _refused_validation(exc):
+    """Return a normal FAIL result for a deterministic adapter input refusal.
+
+    Only the dispatcher-set provenance counts: an adapter process exited with code 2 and wrote
+    exactly one JSON object `{"status": "FAIL", "reason": <str>}` to stderr. `application_builder`
+    uses that exit for manifest/contract rejection before any container dispatch, so the model may
+    repair the candidate and validate again. Every other refusal (timeout, STOP, cancellation,
+    oversized output, unclassified exit) keeps the terminal unknown-side-effect path.
+    """
+    if getattr(exc, 'adapter_returncode', None) != _ADAPTER_INPUT_REFUSAL:
+        return None
+    detail = getattr(exc, 'adapter_stderr', None)
+    if not isinstance(detail, str):
+        return None
+    try:
+        body = json.loads(detail.strip())
+    except ValueError:
+        return None
+    if not isinstance(body, dict) or body.get('status') != 'FAIL' or not isinstance(body.get('reason'), str):
+        return None
+    return {'status': 'FAIL', 'candidate_sha256': None,
+            'observations': [f'validator refused before execution: {body["reason"][:500]}'],
+            'limitations': ['Deterministic adapter input refusal; no container result is claimed.']}
+
+
 def _validate_and_build(candidate, output, builder_argv):
     if not candidate['files']:
         return {'status': 'FAIL', 'candidate_sha256': None,
@@ -386,14 +414,17 @@ def run(request: dict, references: list, builder_argv: list, output: Path, max_t
                                     result['changed'] = state['inflight']['candidate_sha256'] != _candidate_digest(state['candidate'])
                                 if len(_canonical(result)) > MAX_TOOL_RESULT_BYTES:
                                     raise ValueError('tool result exceeds limit')
-                                if name == 'validate':
-                                    state['last_validation'] = result
-                                    state['last_validation_source'] = _candidate_digest(state['candidate'])
-                                    if result.get('status') in ('PASS', 'FAIL') and state['candidate']['files']:
-                                        state['validated_candidate'] = state['last_validation_source']
                                 if name == 'validate' and result.get('status') == 'HOLD' and result.get('oracle'):
                                     unknown = result['oracle']['external_effect'] == 'unknown'
                                     state.update(status='HOLD', task_status='BLOCKED', reason_code='unknown_tool_side_effect' if unknown else 'oracle_validation_hold')
+                            except applications.Refused as exc:
+                                refusal = _refused_validation(exc) if name == 'validate' else None
+                                if refusal is not None:
+                                    result = refusal
+                                else:
+                                    result = {'error': f'Refused: {str(exc)[:2000]}'}
+                                    if name == 'validate':
+                                        state.update(status='HOLD', task_status='BLOCKED', reason_code='unknown_tool_side_effect')
                             except Exception as exc:
                                 result = {'error': f'{type(exc).__name__}: {str(exc)[:2000]}'}
                                 if name == 'validate':
@@ -402,6 +433,13 @@ def run(request: dict, references: list, builder_argv: list, output: Path, max_t
                                 stop_monitor.set()
                                 if watcher:
                                     watcher.join(timeout=1)
+                            # Record every validate outcome, including a deterministic refusal,
+                            # so query_validation and resume observe the same durable baseline.
+                            if name == 'validate':
+                                state['last_validation'] = result
+                                state['last_validation_source'] = _candidate_digest(state['candidate'])
+                                if result.get('status') in ('PASS', 'FAIL') and state['candidate']['files']:
+                                    state['validated_candidate'] = state['last_validation_source']
                             state['messages'].append({'role': 'tool', 'tool_call_id': call['id'], 'content': _canonical(result).decode()})
                             state['pending_index'] += 1
                             if not (name == 'validate' and state['reason_code'] == 'unknown_tool_side_effect'):

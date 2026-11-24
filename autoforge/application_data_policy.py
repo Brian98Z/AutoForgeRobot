@@ -12,8 +12,11 @@ SECRET_KEYS = {"password", "passwd", "token", "authorization", "cookie", "secret
 def endpoint_identity(url: str) -> str:
     if not isinstance(url, str): raise DataPolicyRefused("endpoint must be exact URL text")
     u=urlsplit(url)
-    if u.scheme not in {"http", "https"} or not u.hostname or u.username or u.password or u.query or u.fragment:
+    if u.scheme not in {"http", "https"} or not u.hostname or u.username is not None or u.password is not None or u.query or u.fragment:
         raise DataPolicyRefused("endpoint must be an exact HTTP(S) origin/path without credentials, query or fragment")
+    try: port=u.port
+    except ValueError as exc: raise DataPolicyRefused("endpoint port is invalid") from exc
+    if port is not None and not 1<=port<=65535: raise DataPolicyRefused("endpoint port is invalid")
     return f"{u.scheme}://{u.netloc}{u.path or '/'}"
 
 def disclose(*, endpoint: str, configured_endpoint: str|None, sensitivity: str, max_sensitivity: str, value, max_bytes: int, redaction_keys=()) -> dict:
@@ -26,7 +29,9 @@ def disclose(*, endpoint: str, configured_endpoint: str|None, sensitivity: str, 
     def clean(v):
         if isinstance(v,dict): return {k:("[REDACTED]" if str(k).casefold() in keys else clean(x)) for k,x in v.items()}
         if isinstance(v,list): return [clean(x) for x in v]
-        return v
+        if isinstance(v,tuple): return [clean(x) for x in v]
+        if isinstance(v,(str,int,float,bool)) or v is None: return v
+        raise DataPolicyRefused("disclosure accepts only JSON-compatible dict/list/scalar values")
     encoded=json.dumps(clean(value),ensure_ascii=False,separators=(",",":"),allow_nan=False).encode()
     if len(encoded)>max_bytes: raise DataPolicyRefused("redacted disclosure exceeds byte bound")
     return {"endpoint":exact,"sensitivity":sensitivity,"payload":json.loads(encoded),"bytes":len(encoded),"sha256":hashlib.sha256(encoded).hexdigest()}

@@ -13,11 +13,28 @@ MAX_BODY=1048576
 class ServiceFailure(ValueError): pass
 
 def _run(argv: list[str], timeout: int=15) -> bytes:
-    try: p=subprocess.run(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout,check=False,env=container_env.engine_env(),close_fds=True)
-    except (FileNotFoundError, subprocess.TimeoutExpired) as e: raise ServiceFailure(f'container command unavailable or timed out: {argv[0]}') from e
-    if p.returncode: raise ServiceFailure(f'container command failed ({argv[0]}): {p.stderr[:2048].decode("utf-8","replace")}')
-    if len(p.stdout)>65536: raise ServiceFailure('container response exceeded limit')
-    return p.stdout
+    import tempfile
+    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+        try:
+            proc=subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=stdout,stderr=stderr,env=container_env.engine_env(),close_fds=True)
+        except (FileNotFoundError,OSError) as e:
+            raise ServiceFailure(f'container command unavailable: {argv[0]}') from e
+        started=time.monotonic()
+        try:
+            while True:
+                if os.fstat(stdout.fileno()).st_size>65536 or os.fstat(stderr.fileno()).st_size>65536:
+                    raise ServiceFailure('container response exceeded limit')
+                if proc.poll() is not None: break
+                if time.monotonic()-started>timeout: raise ServiceFailure(f'container command timed out: {argv[0]}')
+                time.sleep(0.02)
+        finally:
+            if proc.poll() is None:
+                proc.kill(); proc.wait()
+        stdout.seek(0); data=stdout.read(65537)
+        stderr.seek(0); err=stderr.read(2048)
+    if proc.returncode: raise ServiceFailure(f'container command failed ({argv[0]}): {err.decode("utf-8","replace")}')
+    if len(data)>65536: raise ServiceFailure('container response exceeded limit')
+    return data
 def _bounded_logs(engine:str,name:str)->str:
     try:
         proc=subprocess.Popen([engine,'logs','--tail','500',name],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env=container_env.engine_env(),close_fds=True)

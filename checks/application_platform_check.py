@@ -69,6 +69,14 @@ def guard_smoke():
         base={'schema':1,'goal':'platform smoke','references':[],'files':files};digest=hashlib.sha256(p._canonical(base)).hexdigest();manifest={**base,'candidate_sha256':digest,'workspace':str(src)}
         assert p._manifest(manifest)[1]==digest
         (src/'main.py').write_bytes(b'tampered');expect(lambda:p._manifest(manifest));(src/'main.py').write_bytes(content)
+        expect(lambda:p._manifest({**manifest,'files':[]}))
+        expect(lambda:p._manifest({**manifest,'files':[{'path':'sub/C:/x.py','size':0,'sha256':'0'*64}]}))
+        (src/'unlisted.txt').write_text('must not be mounted')
+        snap=p._snapshot(src,files,digest)
+        assert sorted(x.relative_to(snap).as_posix() for x in snap.rglob('*') if x.is_file())==['app.apk','main.py']
+        assert not (snap/'unlisted.txt').exists()
+        assert (snap/'main.py').read_bytes()==content
+        __import__('shutil').rmtree(snap)
         execution={'adb_sha256':'a'*64,'serial':'emulator-5554','apk_path':'app.apk','apk_sha256':files[0]['sha256'],'build_evidence_sha256':None,'package':'org.example.app','activity':'org.example.app/.Main','timeout_seconds':120}
         auth={'schema':1,'authorize':True,'platform':'android','target':'acceptance-device','candidate_sha256':digest,'execution':execution,'expires_at':9999999999,'nonce':'x'*16}
         p._authority(auth,'android','acceptance-device',digest,execution)

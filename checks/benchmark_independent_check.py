@@ -18,7 +18,39 @@ DEFAULT_CANDIDATES={
  'ticket-status-001':ROOT/'bootstrap-runs/benchmark-9f1b8e4eab92456283dd9473196b2268/ticket-status-001/session/candidate.json',
  'content-render-001':ROOT/'bootstrap-runs/benchmark-302a806172364ac8a5245c5a052ca1bf/content-render-001/session/candidate.json',
 }
+# An activated candidate set is byte-verified against its manifest before use; the historical
+# defaults above stay available when no activation file exists.
+ACTIVE=ROOT/'fixtures/benchmark/active.json'
+def active_candidates():
+    if not ACTIVE.is_file():return None,None
+    raw=ACTIVE.read_bytes();record=json.loads(raw.decode('utf-8'))
+    entries=record.get('candidates')
+    if record.get('schema')!=1 or not isinstance(entries,dict) or set(entries)!=set(DEFAULT_CANDIDATES):raise ValueError('active candidate manifest must name exactly the four benchmark tasks')
+    resolved={}
+    for task_id,item in entries.items():
+        if not isinstance(item,dict) or not isinstance(item.get('path'),str) or not isinstance(item.get('sha256'),str):raise ValueError('active candidate entry requires path and sha256')
+        path=(ROOT/item['path']).resolve()
+        if ROOT.resolve() not in path.parents or not path.is_file():raise ValueError('active candidate path must stay inside the repository and exist')
+        if hashlib.sha256(path.read_bytes()).hexdigest()!=item['sha256']:raise ValueError('active candidate bytes do not match the activated digest')
+        resolved[task_id]=path
+    return resolved,hashlib.sha256(raw).hexdigest()
 IMAGE='sha256:673719e071ecf27434fd2635bbd8d00f49f4fdd81f243143438a42ced8bedf60'
+# The pin above is the repository *manifest* digest of the authorized Python image, not the
+# local config ID that `docker image inspect --format {{.Id}}` reports. Resolving the digest
+# through its RepoDigests preserves the exact-image guard instead of comparing two identities
+# that can never be equal.
+REPOSITORY='public.ecr.aws/docker/library/python'
+def resolve_authorized_image(engine,digest):
+    if digest!=IMAGE:raise ValueError('only the exact previously authorized local benchmark image is accepted')
+    reference=f'{REPOSITORY}@{digest}'
+    try:
+        digests=json.loads(builder._run([engine,'image','inspect','--format','{{json .RepoDigests}}',reference],timeout=30).decode('ascii'))
+        image_id=builder._run([engine,'image','inspect','--format','{{.Id}}',reference],timeout=30).decode('ascii').strip()
+    except builder.MissingPrerequisite:raise
+    except Exception as exc:raise ValueError(f'authorized benchmark image is not present locally: docker pull {reference}') from exc
+    if not isinstance(digests,list) or reference not in digests:raise ValueError(f'local image does not carry the authorized repository digest {reference}')
+    if not image_id.startswith('sha256:'):raise ValueError('container engine did not return an exact image ID')
+    return image_id
 def sha(raw:bytes)->str:return hashlib.sha256(raw).hexdigest()
 def canon(v)->bytes:return json.dumps(v,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()
 def expected(task_id,request):
@@ -58,20 +90,22 @@ def scenarios(task_id,seed,count):
     return cases
 def run(task_ids,engine,image,outdir,seed,count,repetitions,candidate_overrides=None):
     candidates = dict(DEFAULT_CANDIDATES)
+    activated,active_sha=active_candidates()
+    if activated:candidates.update(activated)
     for task_id, path in (candidate_overrides or {}).items():
         candidates[task_id] = Path(path).resolve()
     manifest_bytes=MANIFEST.read_bytes();lock=json.loads(LOCK.read_text(encoding='utf-8'));manifest=json.loads(manifest_bytes)
     if sha(manifest_bytes)!=lock['public_manifest_sha256']:raise ValueError('public task manifest differs from locked digest')
     contracts_path=ROOT/'fixtures/benchmark/contracts.json';contracts_bytes=contracts_path.read_bytes()
     if sha(contracts_bytes)!=lock['contracts_sha256']:raise ValueError('locked baseline acceptance contract differs from its digest')
-    if image!=IMAGE:raise ValueError('only the exact previously authorized local benchmark image is accepted')
+    image_id=resolve_authorized_image(engine,image)
     unknown=set(task_ids)-set(candidates)
     if unknown:raise ValueError('unknown task id selection')
     if not task_ids or len(set(task_ids))!=len(task_ids):raise ValueError('task ids must be a nonempty unique list')
     if not 1<=repetitions<=20:raise ValueError('repetitions must be 1..20')
     if not 1<=count<=5000:raise ValueError('cases-per-task must be 1..5000')
     if set(candidate_overrides or {})-set(task_ids):raise ValueError('candidate override must be within selected task ids')
-    info=builder.preflight(engine,image);outdir.mkdir(parents=True,exist_ok=False);rows=[]
+    info=builder.preflight(engine,image_id);outdir.mkdir(parents=True,exist_ok=False);rows=[]
     for tid in task_ids:
         task=next(t for t in manifest['tasks'] if t['task_id']==tid);candidate_path=candidates[tid]
         raw=candidate_path.read_bytes();candidate=json.loads(raw.decode('utf-8'));clean,contents=applications.validate_candidate(candidate)
@@ -84,12 +118,12 @@ def run(task_ids,engine,image,outdir,seed,count,repetitions,candidate_overrides=
                 batch=cases[start:start+builder.MAX_REQUESTS];batch_expected=expected_rows[start:start+builder.MAX_REQUESTS]
                 contract={'schema':1,'entrypoint':'main.py','scenarios':[{'name':f'independent-{sample_seed}-{batch_index}','requests':batch,'expected':batch_expected}]}
                 stage=applications.stage_candidate(clean,outdir/(tid+'-sample-'+str(repetition)+'-batch-'+str(batch_index)));stage_manifest=json.loads(Path(stage['manifest']).read_text(encoding='utf-8'))
-                result=builder.build({'schema':1,'workspace_manifest':stage_manifest,'candidate_sha256':stage['candidate_sha256']},contract,engine,image,info)
+                result=builder.build({'schema':1,'workspace_manifest':stage_manifest,'candidate_sha256':stage['candidate_sha256']},contract,engine,image_id,info)
                 passed=passed and result['build_pass'] and result['test_pass'];observations.extend(result['observations'])
             status='PASS' if passed else 'FAIL'
-            row={'task_id':tid,'sample':repetition,'status':status,'candidate_path':str(candidate_path),'candidate_sha256':hashlib.sha256(applications._json_bytes(clean)).hexdigest(),'source_sha256':sha(source),'immutable_candidate_file_sha256':sha(raw),'task_sha256':hashlib.sha256(canon(task)).hexdigest(),'public_manifest_sha256':sha(manifest_bytes),'acceptance_fixture_sha256':sha(contracts_bytes),'image_id':info['image_id'],'builder_sha256':sha(Path(builder.__file__).read_bytes()),'independent_checker_sha256':sha(Path(__file__).read_bytes()),'validator_sha256':sha(Path(applications.__file__).read_bytes()),'scenario_seed':sample_seed,'generated_case_count':count,'case_count':len(cases),'scenario_input_sha256':sha(canon(cases)),'independent_expected_sha256':sha(canon(expected_rows)),'elapsed_seconds':time.monotonic()-started,'container_observations':observations,'limitations':['Public-semantics executable comparison only; no human semantic authorization or second independent reviewer supplied.','Exact container image identity is local observation; image contents remain operator-trusted.','Candidate provenance is the immutable file at the recorded path, not a cryptographically signed producer attestation.']}
+            row={'task_id':tid,'sample':repetition,'status':status,'candidate_path':str(candidate_path),'candidate_sha256':hashlib.sha256(applications._json_bytes(clean)).hexdigest(),'source_sha256':sha(source),'immutable_candidate_file_sha256':sha(raw),'task_sha256':hashlib.sha256(canon(task)).hexdigest(),'public_manifest_sha256':sha(manifest_bytes),'acceptance_fixture_sha256':sha(contracts_bytes),'image_id':info['image_id'],'image_digest':image,'builder_sha256':sha(Path(builder.__file__).read_bytes()),'independent_checker_sha256':sha(Path(__file__).read_bytes()),'validator_sha256':sha(Path(applications.__file__).read_bytes()),'scenario_seed':sample_seed,'generated_case_count':count,'case_count':len(cases),'scenario_input_sha256':sha(canon(cases)),'independent_expected_sha256':sha(canon(expected_rows)),'elapsed_seconds':time.monotonic()-started,'container_observations':observations,'limitations':['Public-semantics executable comparison only; no human semantic authorization or second independent reviewer supplied.','Exact container image identity is local observation; image contents remain operator-trusted.','Candidate provenance is the immutable file at the recorded path, not a cryptographically signed producer attestation.']}
             row['evidence_sha256']=sha(canon(row));rows.append(row)
-    report={'schema':1,'status':'PASS' if rows and all(r['status']=='PASS' for r in rows) else 'FAIL','scope':'independently derived seeded executable semantics for historical generated candidates; no producer/oracle authority manufactured','candidate_mapping':{tid:{'path':str(path),'sha256':sha(path.read_bytes())} for tid,path in sorted(candidates.items()) if tid in task_ids},'task_order':[r['task_id'] for r in rows],'runs':rows,'semantic_approval':'HOLD','missing_authorization':'External independent semantic reviewer approval of this executable reference implementation and its public-spec interpretation.','authority_limits':['No separate model, producer, or oracle identity is claimed.','Comparison PASS is not dual semantic approval.'],'sha256':None}
+    report={'schema':1,'status':'PASS' if rows and all(r['status']=='PASS' for r in rows) else 'FAIL','scope':'independently derived seeded executable semantics for historical generated candidates; no producer/oracle authority manufactured','authorized_image':{'repository':REPOSITORY,'digest':image,'image_id':info['image_id']},'active_manifest_sha256':active_sha,'candidate_mapping':{tid:{'path':str(path),'sha256':sha(path.read_bytes())} for tid,path in sorted(candidates.items()) if tid in task_ids},'task_order':[r['task_id'] for r in rows],'runs':rows,'semantic_approval':'HOLD','missing_authorization':'External independent semantic reviewer approval of this executable reference implementation and its public-spec interpretation.','authority_limits':['No separate model, producer, or oracle identity is claimed.','Comparison PASS is not dual semantic approval.'],'sha256':None}
     report['sha256']=sha(canon(report));path=outdir/'independent-comparison.json';path.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8');return report,path
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--engine',choices=('docker','podman'),required=True);p.add_argument('--image',default=IMAGE);p.add_argument('--output',type=Path,required=True);p.add_argument('--seed',type=int,default=21104);p.add_argument('--cases-per-task',type=int,default=80);p.add_argument('--repetitions',type=int,default=1);p.add_argument('--task-id',action='append');p.add_argument('--candidate',action='append',default=[],metavar='TASK_ID=PATH');a=p.parse_args()

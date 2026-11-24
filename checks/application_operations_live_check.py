@@ -26,19 +26,29 @@ def main(argv=None):
   digest=json.loads((candidate/'manifest.json').read_text())['candidate_sha256'];validation={'schema':1,'status':'PASS','candidate_sha256':digest,'validator':'authored-runtime-fixture','scenarios':['health and immutable business invariant']};validation['validation_sha256']=hashlib.sha256(canon(validation)).hexdigest()
   pack=base/'sealed-pack';delivery.create_pack(candidate,validation,{'schema':1,'dependencies':[],'lock_sha256':hashlib.sha256(b'').hexdigest()},{'engine':'docker','image_id':image,'source':'explicit operator image ID'},pack)
   contract={'schema':1,'health_path':'/health','scenarios':[{'name':'invariant','requests':[{'method':'GET','path':'/value','body':None,'expected':{'status':200,'body':{'value':7}}}]}]}
-  result=ops.deploy(pack,a.deployment_root,authorization=auth,request_id=f'{a.run_id}-shadow',image_id=image,engine=a.engine,command=['python','-I','-u','/candidate/main.py'],contract=contract,config={},phase='shadow')
-  assert result['status']=='SHADOW' and result['measurements']['business_pass']
-  first_promoted=ops.transition(a.deployment_root,authorization=auth,image_id=image,engine=a.engine,action='promote',request_id=f'{a.run_id}-promote-baseline')
-  assert first_promoted['revision']==result['revision']
-  second=ops.deploy(pack,a.deployment_root,authorization=auth,request_id=f'{a.run_id}-canary',image_id=image,engine=a.engine,command=['python','-I','-u','/candidate/main.py'],contract=contract,config={},phase='canary')
-  assert second['status']=='CANARY' and second['measurements']['business_pass']
-  second_promoted=ops.transition(a.deployment_root,authorization=auth,image_id=image,engine=a.engine,action='promote',request_id=f'{a.run_id}-promote')
-  assert second_promoted['status']=='PROMOTED'
-  try:ops.deploy(pack,a.deployment_root,authorization=auth,request_id=f'{a.run_id}-fault',image_id=image,engine=a.engine,command=['python','-I','-u','/candidate/main.py'],contract=contract,config={},phase='canary',fault_after=1)
-  except ops.OperationsRefused as e:
-   assert 'configured release stop condition triggered' in str(e),str(e)
-  else:raise AssertionError('real post-readiness container fault did not trigger failure handling')
-  rolled=ops.transition(a.deployment_root,authorization=auth,image_id=image,engine=a.engine,action='rollback',request_id=f'{a.run_id}-rollback')
-  report={'schema':1,'status':'PASS','image_id':image,'shadow':result,'promote':second_promoted,'fault':'post-readiness SIGKILL; business probe observes failure and candidate is removed','rollback':rolled,'authored_fixture_only':True,'limitations':['Authored HTTP fixture has no credentials or migrations; it proves only this exact local runtime lifecycle.','Disposable deployment root is operator-supplied.','Rollback covers code/config pointer only; no database migration is executed.']}
-  a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_bytes(canon(report)+b'\n');print(json.dumps({'status':'PASS','evidence':str(a.output),'revision':result['revision'],'fault':'observed','rollback':rolled['status']}));return 0
+  runtimes=[]
+  try:
+   result=ops.deploy(pack,a.deployment_root,authorization=auth,request_id=f'{a.run_id}-shadow',image_id=image,engine=a.engine,command=['python','-I','-u','/candidate/main.py'],contract=contract,config={},phase='shadow')
+   runtimes.append(result.get('container_id'))
+   assert result['status']=='SHADOW' and result['measurements']['business_pass']
+   first_promoted=ops.transition(a.deployment_root,authorization=auth,image_id=image,engine=a.engine,action='promote',request_id=f'{a.run_id}-promote-baseline')
+   assert first_promoted['revision']==result['revision']
+   second=ops.deploy(pack,a.deployment_root,authorization=auth,request_id=f'{a.run_id}-canary',image_id=image,engine=a.engine,command=['python','-I','-u','/candidate/main.py'],contract=contract,config={},phase='canary')
+   runtimes.append(second.get('container_id'))
+   assert second['status']=='CANARY' and second['measurements']['business_pass']
+   second_promoted=ops.transition(a.deployment_root,authorization=auth,image_id=image,engine=a.engine,action='promote',request_id=f'{a.run_id}-promote')
+   assert second_promoted['status']=='PROMOTED'
+   try:ops.deploy(pack,a.deployment_root,authorization=auth,request_id=f'{a.run_id}-fault',image_id=image,engine=a.engine,command=['python','-I','-u','/candidate/main.py'],contract=contract,config={},phase='canary',fault_after=1)
+   except ops.OperationsRefused as e:
+    assert 'configured release stop condition triggered' in str(e),str(e)
+   else:raise AssertionError('real post-readiness container fault did not trigger failure handling')
+   rolled=ops.transition(a.deployment_root,authorization=auth,image_id=image,engine=a.engine,action='rollback',request_id=f'{a.run_id}-rollback')
+   report={'schema':1,'status':'PASS','image_id':image,'shadow':result,'promote':second_promoted,'fault':'post-readiness SIGKILL; business probe observes failure and candidate is removed','rollback':rolled,'authored_fixture_only':True,'limitations':['Authored HTTP fixture has no credentials or migrations; it proves only this exact local runtime lifecycle.','Disposable deployment root is operator-supplied.','Rollback covers code/config pointer only; no database migration is executed.']}
+   a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_bytes(canon(report)+b'\n')
+  finally:
+   # Both promoted revisions are disposable test runtimes: a passing check must not leave
+   # them serving, and a failing one must not leak them for the next suite run to trip over.
+   for cid in runtimes:
+    if cid:ops.remove_runtime(a.engine,cid)
+  print(json.dumps({'status':'PASS','evidence':str(a.output),'revision':result['revision'],'fault':'observed','rollback':rolled['status']}));return 0
 if __name__=='__main__':raise SystemExit(main())

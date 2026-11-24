@@ -26,7 +26,7 @@ def run_manifest(*,task_id:str,task_sha256:str,reference_sha256:str,budgets:dict
     if not isinstance(budgets,dict) or not budgets or any(type(v) not in (int,float) or v<0 for v in budgets.values()): raise EvaluationRefused("budgets must be configured nonnegative limits")
     lanes={}
     for name,argv in (("proposal",proposal_argv),("replay",replay_argv)):
-        if not isinstance(argv,list) or not argv or any(not isinstance(x,str) or not x for x in argv): raise EvaluationRefused(name+" exact argv required")
+        if not isinstance(argv,list) or not argv or any(not isinstance(x,str) or not x or '\x00' in x for x in argv): raise EvaluationRefused(name+" exact argv required")
         lanes[name]={"argv":argv,"argv_sha256":hashlib.sha256(checkpoint.canonical(argv)).hexdigest()}
     payload={"schema":1,"task_id":task_id,"task_sha256":task_sha256,"reference_sha256":reference_sha256,"budgets":budgets,"tool_sha256":tool_sha256,"acceptance_sha256":acceptance_sha256,"image_id":image_id,"lanes":lanes,"limitations":["argv lanes execute trusted adapters only; candidate execution must be delegated to application_build/application_builder container path.","lane identity declarations are not authenticated by this manifest."]}
     return {**payload,"sha256":_sha(payload)}
@@ -36,7 +36,11 @@ def _validate_run_manifest(m):
     args={k:m[k] for k in ("task_id","task_sha256","reference_sha256","budgets","tool_sha256","acceptance_sha256","image_id")}
     lanes=m["lanes"]
     if not isinstance(lanes,dict) or set(lanes)!={"proposal","replay"}: raise EvaluationRefused("two lanes required")
-    rebuilt=run_manifest(**args,proposal_argv=lanes["proposal"].get("argv"),replay_argv=lanes["replay"].get("argv"))
+    for name in ("proposal","replay"):
+        lane=lanes[name]
+        if not isinstance(lane,dict) or set(lane)!={"argv","argv_sha256"}:
+            raise EvaluationRefused(f"{name} lane must contain exactly argv and argv_sha256")
+    rebuilt=run_manifest(**args,proposal_argv=lanes["proposal"]["argv"],replay_argv=lanes["replay"]["argv"])
     if rebuilt!=m: raise EvaluationRefused("run manifest digest mismatch")
     return rebuilt
 
@@ -53,7 +57,10 @@ def execute_lane(manifest:dict,lane:str,*,timeout_seconds:int,adapter_authorized
     started=time.monotonic()
     try:
         with tempfile.TemporaryFile() as stdout,tempfile.TemporaryFile() as stderr:
-            proc=subprocess.Popen(m["lanes"][lane]["argv"],stdin=subprocess.DEVNULL,stdout=stdout,stderr=stderr,shell=False,start_new_session=os.name!="nt",close_fds=True)
+            try:
+                proc=subprocess.Popen(m["lanes"][lane]["argv"],stdin=subprocess.DEVNULL,stdout=stdout,stderr=stderr,shell=False,start_new_session=os.name!="nt",close_fds=True)
+            except (OSError,ValueError) as exc:
+                raise EvaluationRefused(f"trusted adapter could not start: {type(exc).__name__}") from exc
             try:
                 while True:
                     if os.fstat(stdout.fileno()).st_size>applications.MAX_STDOUT_BYTES or os.fstat(stderr.fileno()).st_size>applications.MAX_STDERR_BYTES: raise EvaluationRefused("trusted adapter output exceeds bounded limit")

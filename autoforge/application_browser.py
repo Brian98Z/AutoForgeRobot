@@ -135,9 +135,10 @@ def run(origin, digest, attestation, contract, out_dir, *, timeout=60, authorize
             page.on('response',record_response)
             page.on('pageerror',record_page_error)
             page.on('requestfailed',record_request_failure)
+            attested=urlsplit(origin)
             def guard(route, request):
                 u=urlsplit(request.url)
-                if u.scheme not in ('http','https','data','blob','about') or (u.scheme in ('http','https') and (u.hostname!='127.0.0.1' or u.port!=urlsplit(origin).port)):
+                if u.scheme not in ('http','https','data','blob','about') or (u.scheme in ('http','https') and (u.scheme!=attested.scheme or u.hostname!=attested.hostname or u.port!=attested.port)):
                     blocked.append(request.url[:512]); route.abort()
                 else: route.continue_()
             context.route('**/*',guard)

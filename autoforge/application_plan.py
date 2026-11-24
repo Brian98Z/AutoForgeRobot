@@ -47,7 +47,7 @@ def _atomic(path:Path,data:dict):
 def _clean(plan:Any)->dict:
     if not isinstance(plan,dict) or set(plan)!={"schema","plan_id","spec_sha256","tasks","status","events"}:_fail("invalid plan shape")
     if plan["schema"]!=SCHEMA or not isinstance(plan["plan_id"],str) or not plan["plan_id"]:_fail("invalid plan identity/schema")
-    if not isinstance(plan["spec_sha256"],str) or len(plan["spec_sha256"])!=64:_fail("invalid spec digest")
+    if not isinstance(plan["spec_sha256"],str) or not __import__("re").fullmatch(r"[0-9a-f]{64}",plan["spec_sha256"]):_fail("invalid spec digest")
     if plan["status"] not in {"READY","PAUSED","BLOCKED","SUCCEEDED","FAILED","UNKNOWN"}:_fail("invalid plan status")
     if not isinstance(plan["events"],list) or not isinstance(plan["tasks"],list) or not plan["tasks"]:_fail("tasks/events invalid")
     ids=set();graph={}
@@ -57,6 +57,10 @@ def _clean(plan:Any)->dict:
         tid=task["id"]
         if not isinstance(tid,str) or not tid or tid in ids:_fail("duplicate/invalid task id")
         ids.add(tid);graph[tid]=task["depends_on"]
+        for key in ("requirement_ids","acceptance_ids"):
+            values=task[key]
+            if not isinstance(values,list) or not values or any(not isinstance(v,str) or not v for v in values) or len(values)!=len(set(values)):
+                _fail(f"invalid {key} for {tid}")
         if task["state"] not in {"PENDING","RUNNING","SUCCEEDED","FAILED","BLOCKED","UNKNOWN"}:_fail(f"invalid task state {tid}")
         if not isinstance(task["argv"],list) or not task["argv"] or not all(isinstance(x,str) and x for x in task["argv"]):_fail(f"invalid trusted adapter argv for {tid}")
         if task["state"]=="SUCCEEDED":

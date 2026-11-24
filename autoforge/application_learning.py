@@ -132,12 +132,13 @@ def record_experience(record: dict, store: str | Path) -> dict:
     _text(record["repair_summary"],"repair_summary")
     if not isinstance(record["environment"],dict) or not record["environment"]: raise LearningRefused("environment identity required")
     validator=record["validator"]
-    if not isinstance(validator,dict) or set(validator)!={"status","report_sha256","validator_id","independent","report_source"} or validator["status"]!="PASS" or type(validator["independent"]) is not bool:
-        raise LearningRefused("experience requires a digest-bound PASS validator report")
+    if not isinstance(validator,dict) or set(validator)!={"status","report_sha256","validator_id","independent","report_source"} or validator["status"]!="PASS" or validator["independent"] is not True:
+        raise LearningRefused("experience requires an independent digest-bound PASS validator report")
     report_sha=_digest(validator["report_sha256"],"validator.report_sha256"); validator_id=_text(validator["validator_id"],"validator.validator_id")
     report_ref=validator["report_source"]
     if not isinstance(report_ref,dict) or set(report_ref)!={"package_id","path","sha256","permission"}: raise LearningRefused("validator report source required")
     report_bound=_source(store,report_ref["package_id"],report_ref["path"],report_ref["sha256"],permission=report_ref["permission"])
+    if report_sha!=report_ref["sha256"]: raise LearningRefused("validator report digest does not bind the selected report bytes")
     report_entry=next(f for f in references._load_package(store,report_ref["package_id"])["files"] if f["path"]==report_ref["path"])
     try: report=json.loads(report_entry["content"])
     except (ValueError,TypeError) as exc: raise LearningRefused("validator evidence must be an actual JSON report") from exc
@@ -148,7 +149,8 @@ def record_experience(record: dict, store: str | Path) -> dict:
     src=record["source"]
     if not isinstance(src,dict) or set(src)!={"package_id","path","sha256","permission"}: raise LearningRefused("source reference required")
     bound=_source(store,src["package_id"],src["path"],src["sha256"],permission=src["permission"])
-    result={**record,"source":bound,"validator":{**validator,"validator_id":validator_id,"report_sha256":report_sha,"report_source":report_bound},"problem_tags":sorted(set(tags)),"invalidation_conditions":list(inv)}
+    ref_fields=("package_id","path","sha256","permission")
+    result={**record,"source":{k:bound[k] for k in ref_fields},"validator":{**validator,"validator_id":validator_id,"report_sha256":report_sha,"report_source":{k:report_bound[k] for k in ref_fields}},"problem_tags":sorted(set(tags)),"invalidation_conditions":list(inv)}
     result["sha256"]=canonical_digest(result)
     return result
 
@@ -216,21 +218,12 @@ def retrieve_experiences(directory: str | Path, *, reference_store: str | Path, 
     for path in sorted(Path(directory).glob("*.json"),key=lambda p:p.name):
         try: row=json.loads(path.read_text(encoding="utf-8"))
         except (OSError,ValueError) as exc: raise LearningRefused(f"invalid experience file {path.name}: {exc}") from exc
+        if not isinstance(row,dict): raise LearningRefused(f"experience must be a JSON object: {path.name}")
         claimed=row.pop("sha256",None)
         if claimed!=canonical_digest(row): raise LearningRefused(f"experience digest mismatch: {path.name}")
-        row["sha256"]=claimed
-        # Re-read the exact package and validator report before reuse; old claims expire if evidence disappears or changes.
-        validator=row.get("validator",{}); report_ref=validator.get("report_source",{})
-        try:
-            report_pkg=references._load_package(reference_store,report_ref.get("package_id",""))
-        except (OSError,ValueError):
-            report_pkg=None
-        if report_pkg is None: raise LearningRefused(f"validator evidence package unavailable: {path.name}")
-        report_entry=next((f for f in report_pkg["files"] if f.get("path")==report_ref.get("path")),None)
-        if report_entry is None or hashlib.sha256(report_entry["content"].encode()).hexdigest()!=report_ref.get("sha256"): raise LearningRefused(f"validator evidence invalidated: {path.name}")
-        try: report=json.loads(report_entry["content"])
-        except (ValueError,TypeError) as exc: raise LearningRefused(f"validator report corrupted: {path.name}") from exc
-        if report.get("status")!="PASS" or report.get("validator_id")!=validator.get("validator_id") or report.get("before_sha256")!=row.get("before_sha256") or report.get("after_sha256")!=row.get("after_sha256") or report.get("environment")!=row.get("environment"): raise LearningRefused(f"experience invalidated by validator report mismatch: {path.name}")
+        # Full revalidation re-reads source and validator packages; old claims expire if evidence disappears or changes.
+        row=record_experience(row,reference_store)
+        if row["sha256"]!=claimed: raise LearningRefused(f"experience digest mismatch: {path.name}")
         record_environment=row.get("environment",{})
         current_environment={k:v for k,v in environment.items() if k not in (ignore_environment_keys or set())}
         recorded_environment={k:v for k,v in record_environment.items() if k not in (ignore_environment_keys or set())}
@@ -250,5 +243,5 @@ def main(argv=None):
         elif args.cmd=="validate": result=validate_reference_model(json.loads(Path(args.model).read_text(encoding="utf-8")),args.store)
         else: result=retrieve_experiences(args.directory,reference_store=args.reference_store,problem_tags=args.tag,environment=json.loads(args.environment_json),limit=args.limit)
         print(json.dumps(result,ensure_ascii=False,sort_keys=True)); return 0
-    except (ValueError,OSError,KeyError) as exc: print(f"HOLD: {exc}",file=sys.stderr); return 2
+    except (ValueError,OSError,KeyError,TypeError,AttributeError) as exc: print(f"HOLD: {exc}",file=sys.stderr); return 2
 if __name__=="__main__": raise SystemExit(main())

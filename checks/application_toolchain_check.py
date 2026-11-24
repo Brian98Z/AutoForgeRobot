@@ -26,4 +26,7 @@ def main()->None:
     assert t._npm_matches_any('10.26.4','>=10')
     assert t._npm_matches_any('10.26.4','^10')
     assert not t._npm_matches_any('11.0.0','^10')
+    assert t._npm_matches_any('1.2.9','~1.2') and not t._npm_matches_any('1.9.0','~1.2')
+    assert not t._npm_matches_any('2.0.0','^1.2')
+    assert t._npm_matches_any('1.2.3','1.2.x')
 if __name__=='__main__':main()

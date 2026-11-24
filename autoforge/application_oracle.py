@@ -23,6 +23,35 @@ def _sha256(value: Any, label: str) -> str:
     return value
 
 
+def _strict_load(raw: bytes, label: str) -> Any:
+    def pairs(items):
+        out = {}
+        for key, value in items:
+            if key in out:
+                raise OracleRefused(f"{label} contains a duplicate JSON key")
+            out[key] = value
+        return out
+    def reject(_value):
+        raise OracleRefused(f"{label} contains a nonstandard JSON constant")
+    try:
+        value = json.loads(raw.decode("utf-8"), object_pairs_hook=pairs, parse_constant=reject)
+        _canonical(value)
+        return value
+    except (UnicodeError, ValueError) as exc:
+        raise OracleRefused(f"{label} is malformed") from exc
+
+
+def _read_bounded(path: Path, limit: int, label: str) -> bytes:
+    try:
+        with path.open("rb") as stream:
+            data = stream.read(limit + 1)
+    except OSError as exc:
+        raise OracleRefused(f"{label} is unreadable: {exc}") from exc
+    if len(data) > limit:
+        raise OracleRefused(f"{label} exceeds size limit")
+    return data
+
+
 def _canonical(value: Any) -> bytes:
     try:
         return checkpoint.canonical(value)
@@ -53,10 +82,8 @@ class OracleLedger:
             return {"schema": 1, "contract_sha256": self.contract_sha256,
                     "max_queries": self.max_queries, "entries": []}
         try:
-            raw = self.path.read_bytes()
-            if len(raw) > 4 * 1024 * 1024:
-                raise OracleRefused("oracle ledger exceeds size limit")
-            envelope = json.loads(raw.decode("utf-8"))
+            raw = _read_bounded(self.path, 4 * 1024 * 1024, "oracle ledger")
+            envelope = _strict_load(raw, "oracle ledger")
             state = envelope["state"]
             if (set(envelope) != {"schema", "state", "sha256"} or envelope["schema"] != 1
                     or envelope["sha256"] != checkpoint.digest(_canonical(state))):
@@ -84,7 +111,10 @@ class OracleLedger:
     def _save(self, state: dict[str, Any]) -> None:
         payload = _canonical(state)
         envelope = {"schema": 1, "state": state, "sha256": checkpoint.digest(payload)}
-        checkpoint._atomic(self.path, _canonical(envelope) + b"\n")
+        encoded = _canonical(envelope) + b"\n"
+        if len(encoded) > 4 * 1024 * 1024:
+            raise OracleRefused("oracle ledger exceeds size limit")
+        checkpoint._atomic(self.path, encoded)
 
     def reserve(self, candidate_sha256: str, kind: str) -> str:
         _sha256(candidate_sha256, "candidate_sha256")
@@ -121,6 +151,8 @@ class OracleLedger:
                     # Public repair intentionally retains the existing detailed validation contract.
                     public = dict(result)
                     public["artifact_sha256"] = artifact
+                    if len(_canonical(public)) > 512 * 1024:
+                        raise OracleRefused("public oracle result exceeds size limit")
                     stored = {"status": str(result.get("status", "HOLD")), "artifact_sha256": artifact,
                               "public_result": public}
                     response = public
@@ -149,12 +181,15 @@ class OracleLedger:
         result = dispatch()
         if not isinstance(result, dict):
             raise OracleRefused("dispatch returned no report; reservation remains spent and unknown")
-        if result.get("external_effect") == "unknown":
-            return {"status": "HOLD", "artifact_sha256": result.get("artifact_sha256", candidate_sha256),
+        artifact = _sha256(result.get("artifact_sha256", candidate_sha256), "artifact_sha256")
+        effect = result.get("external_effect", "complete")
+        if effect not in {"complete", "unknown", "not_dispatched"}:
+            effect = "unknown"
+        if effect == "unknown":
+            return {"status": "HOLD", "artifact_sha256": artifact,
                     "reason_codes": ["unknown_outcome"], "external_effect": "unknown"}
-        artifact = result.get("artifact_sha256", candidate_sha256)
         completed = self.complete(query_id, result, artifact_sha256=artifact)
-        return {**completed, "external_effect": result.get("external_effect", "complete")}
+        return {**completed, "external_effect": effect}
 
 
 def heldout_result(builder_report: dict[str, Any], *, artifact_sha256: str) -> dict[str, Any]:
@@ -189,12 +224,12 @@ def _adapter_main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         checkpoint.regular_chain(args.contract)
-        if checkpoint.digest(args.contract.read_bytes()) != _sha256(args.contract_sha256, "contract_sha256"):
+        if checkpoint.digest(_read_bounded(args.contract, 1_048_576, "hidden contract")) != _sha256(args.contract_sha256, "contract_sha256"):
             raise OracleRefused("hidden contract digest differs from operator-bound contract")
-        command = json.loads(args.builder_argv)
+        command = _strict_load(args.builder_argv.encode('utf-8'), 'builder argv')
         if not isinstance(command, list) or not command or any(not isinstance(item, str) or not item for item in command):
             raise OracleRefused("builder argv must be a nonempty JSON string array")
-        if '--contract' not in command or command.count('--contract') != 1:
+        if any(item.startswith('--contract=') for item in command) or '--contract' not in command or command.count('--contract') != 1:
             raise OracleRefused('trusted adapter must bind one exact contract')
         contract_index = command.index('--contract') + 1
         if contract_index >= len(command) or Path(command[contract_index]).resolve() != args.contract.resolve():
@@ -202,7 +237,7 @@ def _adapter_main(argv: list[str] | None = None) -> int:
         payload = sys.stdin.buffer.read(4_194_305)
         if len(payload) > 4_194_304:
             raise OracleRefused("adapter manifest exceeds byte limit")
-        manifest = json.loads(payload.decode("utf-8"))
+        manifest = _strict_load(payload, "adapter manifest")
         candidate = _sha256(manifest.get("candidate_sha256") if isinstance(manifest, dict) else None, "candidate_sha256")
         ledger = OracleLedger(args.ledger, contract_sha256=args.contract_sha256, max_queries=args.max_queries)
         try:
@@ -231,7 +266,7 @@ def _adapter_main(argv: list[str] | None = None) -> int:
 def _dispatch(command: list[str], payload: bytes, candidate_sha256: str) -> dict[str, Any]:
     import applications
     try:
-        manifest = json.loads(payload.decode("utf-8"))
+        manifest = applications._strict_loads(payload)
         report = applications._run_json_command(command, manifest)
     except Exception:
         return {"status": "HOLD", "reason_codes": ["unknown_outcome"], "external_effect": "unknown"}

@@ -19,8 +19,13 @@ def _load(path):
     try: env=json.loads(p.read_text(encoding="utf-8"))
     except FileNotFoundError:return {"schema":1,"requests":{},"events":[]}
     except (OSError,ValueError) as e: raise EffectRefused("effect ledger unreadable") from e
-    if set(env)!={"schema","state","sha256"} or env["schema"]!=1 or _digest(env["state"])!=env["sha256"]: raise EffectRefused("effect ledger integrity failure")
-    return env["state"]
+    if not isinstance(env,dict) or set(env)!={"schema","state","sha256"} or env["schema"]!=1 or not isinstance(env["state"],dict) or not isinstance(env.get("sha256"),str): raise EffectRefused("effect ledger integrity failure")
+    state=env["state"]
+    if set(state)!={"schema","requests","events"} or state["schema"]!=1 or not isinstance(state["requests"],dict) or not isinstance(state["events"],list): raise EffectRefused("effect ledger integrity failure")
+    try: actual=_digest(state)
+    except (TypeError,ValueError,KeyError) as e: raise EffectRefused("effect ledger integrity failure") from e
+    if actual!=env["sha256"]: raise EffectRefused("effect ledger integrity failure")
+    return state
 def _save(path,state):
     p=Path(path);p.parent.mkdir(parents=True,exist_ok=True); env={"schema":1,"state":state,"sha256":_digest(state)}
     application_checkpoint._atomic(p,_canonical(env)+b"\n")
@@ -35,7 +40,7 @@ def prepare(path, *, request_id: str, effect_class: str, endpoint: str, method: 
     with _lock(path):
         state=_load(path);old=state["requests"].get(request_id)
         if old:
-            if old["request_sha256"]!=record["request_sha256"]: raise EffectRefused("request ID already bound to different effect")
+            if not isinstance(old,dict) or old.get("request_sha256")!=record["request_sha256"]: raise EffectRefused("request ID already bound to different effect")
             return old
         record.update({"state":"PREPARED","attempts":0,"evidence":None,"compensation":None})
         state["requests"][request_id]=record;state["events"].append({"event":"prepared","request_id":request_id,"time":int(time.time())});_save(path,state)

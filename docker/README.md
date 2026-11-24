@@ -42,12 +42,17 @@ it is started with llama.cpp automatic layer fitting:
 
 ```powershell
 D:\LLAMA\llama-server.exe `
-  -m "<models-dir>\Qwen3.6-35B-A3B\model.gguf" `
-  --mmproj "<models-dir>\Qwen3.6-35B-A3B\mmproj.gguf" `
+  -m "H:\ComfyUI_Mie_2026_V8.0\ComfyUI\models\LLM\Qwen3.6-35B-A3B\Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ4_NL.gguf" `
+  --mmproj "H:\ComfyUI_Mie_2026_V8.0\ComfyUI\models\LLM\Qwen3.6-35B-A3B\mmproj-Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-f16.gguf" `
   --host 127.0.0.1 --port 8081 --fit on --fit-ctx 16384 -c 32768 --parallel 1 `
   --flash-attn on -ub 512 -b 1024 --threads 16 --threads-batch 16 `
-  -ctk q8_0 -ctv q8_0 --load-mode mmap --no-reasoning-preserve
+  -ctk q8_0 -ctv q8_0 --load-mode mmap --no-reasoning-preserve `
+  --reasoning-budget 2048
 ```
+
+`--reasoning-budget 2048` bounds hidden thinking so a turn cannot consume the whole completion
+budget before emitting a tool call; live checks treat an exhausted completion as a terminal HOLD.
+
 
 Switching to the smaller Qwen3.5-9B service on host port 8084 only requires changing
 `AUTOFORGE_MODEL_FORWARD` and `AUTOFORGE_MODEL`; the controller refuses a model id that the
@@ -61,12 +66,12 @@ Context size matters more than layer count here: at `-c 32768` the 19.8 GB model
 with `--fit on` and 12 threads:
 
 ```powershell
-Set-Content "$env:TEMP\qwen36-8081.cmd" @'
+Set-Content F:\OMP\temp\qwen36-8081.cmd @'
 @echo off
 cd /d D:\LLAMA
 llama-server.exe -m ... -m --host 127.0.0.1 --port 8081 --fit on ... 1> out.log 2> err.log
 '@
-powershell -NoProfile -Command "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='cmd.exe /c start \"qwen36-8081\" /min \"%TEMP%\\qwen36-8081.cmd\"'}"
+powershell -NoProfile -Command "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='cmd.exe /c start \"qwen36-8081\" /min \"F:\OMP\temp\qwen36-8081.cmd\"'}"
 ```
 
 `start` gives the server its own console; a plain WMI/`Start-Process` launch still shares the
@@ -123,16 +128,45 @@ model mid-iteration. A profiled check whose required image is missing is recorde
 `skipped: no local image …` instead of failing on a placeholder. Baseline records are
 append-only at `/workspace/autoforge/bootstrap-runs/docker-baseline/iterations.jsonl`.
 
+The suite does not accumulate engine resources: the operations checks remove every revision
+container and promote/rollback probe container they create (each removal re-checks the
+`io.omp.autoforge.owner` label first), and a passing `application_operations_state_live_check`
+row deletes the exact `af-state-*` volume the suite created for it. A failing row keeps the
+volume and records its name in the report for diagnosis.
+
+Three checks need inputs that are not baked into the image; the suite supplies them when the
+corresponding path is mounted, and records an explicit `skipped:` row otherwise:
+
+| check | input | setup |
+|---|---|---|
+| `benchmark_independent_check` | the authorized Python image, pinned by manifest digest `sha256:673719e0…`, plus four historical candidates baked into the image | `docker exec autoforge-docker-1 docker pull public.ecr.aws/docker/library/python@sha256:673719e071ecf27434fd2635bbd8d00f49f4fdd81f243143438a42ced8bedf60` |
+| `application_provenance_check` | `/workspace/provenance` read-only: `julia-1.13.3-linux-x86_64.tar.gz`, its `.asc`, `publisher-keyring.gpg`, `pin.json` | dir is bind-mounted from `bootstrap-runs/provenance-julia-1.13.3-20261124`; the pin records the fingerprint published at `julialang.org/downloads/manual-downloads/` |
+| `frozen_delivery_check` | `/workspace/release` read-only, containing `autoforge-*-linux-x64.tar.gz` | bind-mounted from the repository `release/` directory; the suite extracts the newest member into the run directory |
+
+The benchmark check resolves the pinned manifest digest through the image's `RepoDigests`
+(recording both digest and local config ID); a config ID alone is not accepted.
+
 Checks and the suite are baked into the image: copying a patched file into a running container is
 discarded by `docker compose up --force-recreate`. Rebuild the image, or patch it offline with
 `docker create` + `docker cp` + `docker commit` when a rebuild would need network.
 
-## Remaining non-PASS checks (72/75 on the latest baseline record)
+The apt layers do not trust one mirror: each install tries aliyun first and falls back to
+`deb.debian.org` inside the same layer, because aliyun intermittently fails single package
+fetches (observed on `gcc-14-x86-64-linux-gnu`, exit 100). `Cargo.lock` must be synced with
+`Cargo.toml`; `cargo build --locked` refuses a stale root version instead of silently updating.
 
-| check | reason |
-|---|---|
-| `application_provenance_check` | needs the detached GPG signature and pinned publisher fingerprint of the Julia artifact, which this image does not carry |
-| `frozen_delivery_check` | exercises a Windows executable's spawn/SSE path; the Linux image ships the Rust controller instead |
-| `benchmark_independent_check` | accepts only the previously authorized benchmark image; widening it would remove the guard |
+## Current suite result (76/76 on 2026-11-24)
 
-None of these are silent passes; each returns an explicit HOLD/BLOCKED with its own reason.
+All 76 checks pass. The benchmark check runs the four activated candidates from
+`fixtures/benchmark/active.json` (byte-verified against the recorded digests); its report still
+marks `semantic_approval: HOLD`, because comparison PASS is not an external semantic review.
+`business_check`, `application_platform_check` and `application_database_check` receive real
+inputs from the container profile, so they execute the container candidate, the live realtime
+adapter and the SQLite lifecycle instead of self-reporting `BLOCKED`/`NOT_EXERCISED` with `rc=0`.
+The pre-registered regeneration, all four rounds and the failed historical candidates are retained
+under `bootstrap-runs/benchmark-registration-20261124/` and
+`bootstrap-runs/benchmark-candidate-defects-20261124.json`.
+
+Missing optional inputs are still recorded as explicit `skipped:` rows rather than passes: the
+benchmark image pin, the publisher evidence directory and the frozen release mount each have a
+documented setup in the table above.

@@ -81,7 +81,14 @@ def _redact(value: Any, secrets: dict[str, str]) -> Any:
     if isinstance(value, list):
         return [_redact(item, secrets) for item in value]
     if isinstance(value, dict):
-        return {key: _redact(item, secrets) for key, item in value.items()}
+        cleaned = {}
+        for key, item in value.items():
+            safe_key = key
+            if isinstance(key, str):
+                for secret in secrets.values():
+                    if secret: safe_key = safe_key.replace(secret, "[REDACTED]")
+            cleaned[safe_key] = _redact(item, secrets)
+        return cleaned
     return value
 
 
@@ -145,9 +152,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     contract_path = (args.contract or authored_contract).resolve(strict=True)
     if contract_path != authored_contract:
         raise ValueError("this runner only executes the authored HTTP contract; generated contracts are reference-only")
+    authored_browser = (FIXTURES / "authored_browser_contract.json").resolve(strict=True)
     browser_path = args.browser_contract.resolve(strict=True) if args.browser_contract else None
-    if browser_path == (FIXTURES / "generated_browser_contract.json").resolve():
-        raise ValueError("generated browser contract is reference-only and is never run here")
+    if browser_path is not None and browser_path != authored_browser:
+        raise ValueError("this runner only executes the authored browser contract; generated and caller contracts are reference-only")
     contract_original = _strict_json(contract_path)
     contract = _replace_authored_tokens(contract_original)
     browser_contract = _replace_authored_tokens(_strict_json(browser_path)) if browser_path else None
@@ -208,14 +216,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             },
             "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
-        report = _redact(report, values if secret_manifest else {})
+        report = _redact(report, values)
         payload = _canonical(report) + b"\n"
         if len(payload) > application_builder.MAX_REPORT:
             raise ValueError("acceptance report exceeds size limit")
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        if args.output.exists():
-            raise ValueError("refusing to overwrite existing report")
-        args.output.write_bytes(payload)
+        try:
+            with args.output.open("xb") as stream:
+                stream.write(payload); stream.flush(); os.fsync(stream.fileno())
+        except FileExistsError as exc:
+            raise ValueError("refusing to overwrite existing report") from exc
         return report
 
 

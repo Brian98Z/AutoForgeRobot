@@ -86,8 +86,43 @@ def main() -> int:
         command = [sys.executable, str(Path(oracle.__file__)), '--ledger', str(cli_ledger), '--contract', str(bound_contract), '--contract-sha256', hashlib.sha256(bound_contract.read_bytes()).hexdigest(), '--max-queries', '1', '--builder-argv', json.dumps(adapter)]
         denied = subprocess.run(command, input=json.dumps({'candidate_sha256': candidate}), capture_output=True, text=True, timeout=10)
         check(denied.returncode == 2 and not marker.exists() and not cli_ledger.exists(), 'different contract dispatched or consumed allowance')
+        # The `--contract=<path>` spelling cannot smuggle a second contract option.
+        marker2 = Path(temp) / 'must-not-launch-2'
+        adapter2 = [sys.executable, '-c', 'from pathlib import Path; Path(' + repr(str(marker2)) + ').write_text("launched")',
+                    '--contract', str(bound_contract), '--contract=' + str(foreign_contract)]
+        denied2 = subprocess.run([sys.executable, str(Path(oracle.__file__)), '--ledger', str(cli_ledger),
+                                  '--contract', str(bound_contract), '--contract-sha256',
+                                  hashlib.sha256(bound_contract.read_bytes()).hexdigest(),
+                                  '--max-queries', '1', '--builder-argv', json.dumps(adapter2)],
+                                 input=json.dumps({'candidate_sha256': candidate}), capture_output=True, text=True, timeout=10)
+        check(denied2.returncode == 2 and not marker2.exists() and not cli_ledger.exists(),
+              '--contract= spelling bypassed the single-contract rule')
+        # Generic dispatch results are validated before they can affect accounting.
+        third = oracle.OracleLedger(Path(temp) / 'validated-ledger.json', contract_sha256=contract, max_queries=3)
+        try:
+            third.run_query(candidate, 'heldout_final', lambda: {'status': 'PASS', 'artifact_sha256': 'not-a-digest'})
+        except oracle.OracleRefused:
+            pass
+        else:
+            raise AssertionError('invalid artifact digest was accepted')
+        fourth = oracle.OracleLedger(Path(temp) / 'validated-ledger-2.json', contract_sha256=contract, max_queries=3)
+        coerced = fourth.run_query(candidate, 'heldout_final',
+                                   lambda: {'status': 'PASS', 'artifact_sha256': artifact, 'external_effect': 'forged'})
+        check(coerced['external_effect'] == 'unknown' and coerced['status'] == 'HOLD',
+              'arbitrary external_effect was trusted')
+        state = json.loads((Path(temp) / 'validated-ledger.json').read_text(encoding='utf-8'))['state']
+        check([e['state'] for e in state['entries']] == ['reserved'],
+              'invalid dispatch result was finalized')
+        huge = Path(temp) / 'huge-ledger.json'
+        huge.write_bytes(b'x' * (4 * 1024 * 1024 + 1))
+        try:
+            oracle.OracleLedger(huge, contract_sha256=contract, max_queries=1)._load()
+        except oracle.OracleRefused:
+            pass
+        else:
+            raise AssertionError('oversized ledger was read')
     print(json.dumps({"status": "PASS", "checks": ["durable-cap", "pre-dispatch-refusal", "contract-policy-binding",
-          "unknown-reservation-nonreplay", "heldout-detail-redaction", "public-repair-detail-preserved"]}, sort_keys=True))
+          "unknown-reservation-nonreplay", "heldout-detail-redaction", "public-repair-detail-preserved", "contract-spelling-refused", "dispatch-result-validated", "ledger-read-bounded"]}, sort_keys=True))
     return 0
 if __name__ == "__main__":
     raise SystemExit(main())

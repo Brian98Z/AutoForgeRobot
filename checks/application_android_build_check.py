@@ -97,6 +97,9 @@ def main():
         check((host/'sdk'/'platform-tools'/'adb').read_bytes()==b'adb','platform-tools archive layout failed')
         check((host/'sdk'/'emulator'/'emulator').read_bytes()==b'emulator','emulator archive layout failed')
         check((host/'sdk'/'cmdline-tools'/'latest'/'bin'/'sdkmanager').read_bytes()==b'cmd','command-line tools layout failed')
+    try: android._download_package({'url':'https://evil.invalid/repository/x.zip','checksum':'0'*64,'checksum_type':'sha256','size':1},host/'evil-cache')
+    except android.AndroidBuildError: pass
+    else: check(False,'non-Google package URL was accepted')
     result={'status':'PASS','scope':'offline parser, archive traversal defense and provisioning layout guards','sdk_downloaded':False,'candidate_executed':False,'device_used':False}
     if args.isolated_image: result['isolated_staging']=isolated_staging_check(args.isolated_image)
     print(json.dumps(result,sort_keys=True))

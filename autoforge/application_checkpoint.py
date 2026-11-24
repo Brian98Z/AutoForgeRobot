@@ -15,18 +15,25 @@ def digest(data: bytes) -> str:
 
 def _atomic(path: Path, data: bytes) -> None:
     tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
+    created = False
     try:
         with tmp.open("xb") as stream:
+            created = True
             stream.write(data); stream.flush(); os.fsync(stream.fileno())
         os.replace(tmp, path)
         try:
             fd = os.open(str(path.parent), os.O_RDONLY)
             try: os.fsync(fd)
             finally: os.close(fd)
-        except OSError: pass
+        except OSError as exc:
+            # POSIX filesystems can sync a directory; Windows cannot. Elsewhere a failed
+            # directory sync means the rename may not survive a crash, so fail closed.
+            if os.name != "nt":
+                raise ResumeRefused(f"cannot durably commit {path.name}: {exc}") from exc
     finally:
-        try: tmp.unlink()
-        except FileNotFoundError: pass
+        if created:
+            try: tmp.unlink()
+            except FileNotFoundError: pass
 
 def regular_chain(path: Path) -> None:
     import stat
@@ -39,12 +46,29 @@ def save(path: Path, state: dict[str, Any]) -> None:
     regular_chain(path)
     _atomic(path, canonical({"schema": 1, "state": state, "sha256": digest(canonical(state))}) + b"\n")
 
+def _strict_decode(data: bytes) -> Any:
+    def pairs(items):
+        out = {}
+        for key, value in items:
+            if key in out:
+                raise ResumeRefused("duplicate JSON key")
+            out[key] = value
+        return out
+    def reject(_value):
+        raise ResumeRefused("nonstandard JSON constant")
+    return json.loads(data.decode("utf-8"), object_pairs_hook=pairs, parse_constant=reject)
+
+
 def load(path: Path) -> dict[str, Any]:
     regular_chain(path)
     try:
-        with path.open('rb') as stream:raw = stream.read(32 * 1024 * 1024 + 1)
+        import stat as _stat
+        with path.open('rb') as stream:
+            if not _stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise ResumeRefused("checkpoint is not a regular file")
+            raw = stream.read(32 * 1024 * 1024 + 1)
         if len(raw) > 32 * 1024 * 1024: raise ResumeRefused("checkpoint exceeds size limit")
-        env = json.loads(raw.decode("utf-8"))
+        env = _strict_decode(raw)
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise ResumeRefused(f"checkpoint unreadable: {exc}") from exc
     if not isinstance(env, dict) or set(env) != {"schema", "state", "sha256"} or env.get("schema") != 1 or not isinstance(env.get("state"), dict): raise ResumeRefused("checkpoint envelope malformed")
@@ -75,7 +99,8 @@ def _argv_identity(argv: list[str]) -> list[dict[str, str]]:
                         for chunk in iter(lambda:stream.read(1048576),b''):hasher.update(chunk)
                     files.append({"argument_sha256":digest(item.encode()),"path_sha256":digest(str(path.resolve()).encode()),"sha256":hasher.hexdigest()})
                     break
-            except OSError: continue
+            except OSError as exc:
+                raise ResumeRefused(f"cannot fingerprint adapter argument {item!r}: {exc}") from exc
     return files
 
 def _safe_argv(argv: list[str]) -> list[str]:

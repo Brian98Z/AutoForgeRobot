@@ -51,10 +51,35 @@ def prepare_runtime_secrets(secret_values: dict[str,str], *, private_root: str|P
 def secrets_module_token():
     return os.urandom(12).hex()
 
-def resolve_secret_files(config: dict, *, mounted_root: str|Path) -> dict[str,str]:
+def _read_secret_file(path: Path, *, limit: int = 16384) -> tuple[bytes, int]:
+    flags=os.O_RDONLY|getattr(os,"O_BINARY",0)|getattr(os,"O_NOFOLLOW",0)
+    try: fd=os.open(path,flags)
+    except OSError as exc: raise SecretInjectionRefused("secret mount file missing or unsafe") from exc
+    try:
+        stat=os.fstat(fd)
+        if not __import__("stat").S_ISREG(stat.st_mode): raise SecretInjectionRefused("secret mount is not a regular file")
+        if stat.st_size>limit: raise SecretInjectionRefused("secret file exceeds bound")
+        chunks=[]; total=0
+        while True:
+            chunk=os.read(fd,4096)
+            if not chunk: break
+            total+=len(chunk)
+            if total>limit: raise SecretInjectionRefused("secret file exceeds bound")
+            chunks.append(chunk)
+        return b"".join(chunks),stat.st_ino
+    finally: os.close(fd)
+
+
+def resolve_secret_files(config: dict, *, mounted_root: str|Path, manifest: dict|None=None) -> dict[str,str]:
     if not isinstance(config,dict): raise SecretInjectionRefused("runtime config must be a mapping")
     root=Path(mounted_root).resolve(strict=True)
     if root.is_symlink() or not root.is_dir(): raise SecretInjectionRefused("mounted secret root invalid")
+    expected={}
+    if manifest is not None:
+        if not isinstance(manifest,dict) or not isinstance(manifest.get("mounts"),list): raise SecretInjectionRefused("secret ownership manifest required")
+        for item in manifest["mounts"]:
+            if not isinstance(item,dict) or not isinstance(item.get("name"),str) or not isinstance(item.get("sha256"),str): raise SecretInjectionRefused("secret mount descriptor malformed")
+            expected[item["name"]]=item["sha256"]
     resolved={}
     for key,value in config.items():
         if isinstance(value,dict) and set(value)=={"$secret_file"}:
@@ -64,8 +89,11 @@ def resolve_secret_files(config: dict, *, mounted_root: str|Path) -> dict[str,st
             if not _NAME.fullmatch(name): raise SecretInjectionRefused("secret reference name invalid")
             p=root/name
             if p.is_symlink() or not p.is_file() or p.resolve(strict=True).parent!=root: raise SecretInjectionRefused("secret mount file missing or unsafe")
-            if p.stat().st_size>16384: raise SecretInjectionRefused("secret file exceeds bound")
-            resolved[key]=p.read_text(encoding="utf-8")
+            data,_=_read_secret_file(p)
+            if manifest is not None and name not in expected: raise SecretInjectionRefused("secret file is absent from the ownership manifest")
+            if name in expected and hashlib.sha256(data).hexdigest()!=expected[name]: raise SecretInjectionRefused("secret file digest does not match the ownership manifest")
+            try: resolved[key]=data.decode("utf-8")
+            except UnicodeDecodeError as exc: raise SecretInjectionRefused("secret file must be UTF-8 text") from exc
         elif isinstance(value,(str,int,float,bool)) or value is None: resolved[key]=value
         else: raise SecretInjectionRefused("config value must be scalar or explicit secret-file reference")
     return resolved
@@ -81,8 +109,11 @@ def cleanup_runtime_secrets(manifest: dict, *, audit_path: str|Path) -> dict:
     for item in manifest["mounts"]:
         p=Path(item.get("source",""))
         if p.is_symlink() or p.parent!=directory or p.name!=item.get("name") or not p.is_file(): raise SecretInjectionRefused("refusing unowned secret path")
-        digest=hashlib.sha256(p.read_bytes()).hexdigest()
+        data,inode=_read_secret_file(p)
+        digest=hashlib.sha256(data).hexdigest()
         if digest!=item.get("sha256"): raise SecretInjectionRefused("secret changed after mount; retain for operator inspection")
+        current=p.stat()
+        if current.st_ino!=inode or current.st_size!=len(data): raise SecretInjectionRefused("secret changed during cleanup; retain for operator inspection")
         p.unlink();removed.append({"name":p.name,"sha256":digest})
     directory.rmdir();audit=Path(audit_path);audit.parent.mkdir(parents=True,exist_ok=True)
     with audit.open("a",encoding="utf-8") as f:f.write(json.dumps({"event":"runtime_secrets_cleaned","session_id":manifest["session_id"],"files":removed},sort_keys=True)+"\n")

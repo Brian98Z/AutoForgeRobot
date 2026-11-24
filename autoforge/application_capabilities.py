@@ -172,7 +172,9 @@ def verify(live_model: bool = False, timeout: int = 120) -> dict:
                 status = "BLOCKED"
             elif reported & {"FAIL", "HOLD", "REFUSED"}:
                 status = "FAIL"
-            elif "PASS" in reported or structured is None:
+            elif structured is None:
+                status = "BLOCKED"
+            elif "PASS" in reported:
                 status = "PASS"
             else:
                 status = "BLOCKED"

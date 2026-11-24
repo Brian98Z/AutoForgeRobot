@@ -69,8 +69,11 @@ def _npm_comparator(version:str, requirement:str)->bool:
     if count<3:
         if op in ('>=','>'):return got>=floor if op=='>=' else got>floor
         if op in ('<=','<'):return got<=floor if op=='<=' else got<floor
-        if op in ('^','~'):
+        if op=='^':
             upper=(floor[0]+1,0,0) if floor[0] else ((0,floor[1]+1,0) if floor[1] else (0,0,floor[2]+1))
+            return got>=floor and got<upper
+        if op=='~':
+            upper=(floor[0],floor[1]+1,0) if count>=2 else (floor[0]+1,0,0)
             return got>=floor and got<upper
         return all(target[i] is None or got[i]==target[i] for i in range(3))
     if op=='^':
@@ -97,7 +100,7 @@ def _verify_package_artifacts(manifest:dict,cache:Path,stage:Path)->None:
             try:
                 with zipfile.ZipFile(cache/a['artifact_sha256']) as z:
                     infos=z.infolist()
-                    if len(infos)>MAX_FILES or sum(info.file_size for info in infos)>MAX_FILE*MAX_FILES:raise ValueError('wheel archive exceeds member/unpacked size limits')
+                    if len(infos)>MAX_FILES or sum(info.file_size for info in infos)>MAX_TOTAL_OUTPUT:raise ValueError('wheel archive exceeds member/unpacked size limits')
                     metadata=[i for i in infos if i.filename.endswith('.dist-info/METADATA')]; wheels=[i for i in infos if i.filename.endswith('.dist-info/WHEEL')]
                     if len(metadata)!=1 or len(wheels)!=1 or metadata[0].file_size>MAX_FILE or wheels[0].file_size>MAX_FILE:raise ValueError('wheel metadata missing/oversized')
                     meta=Parser().parsestr(z.open(metadata[0]).read(MAX_FILE+1).decode()); tags=[x.split(':',1)[1].strip() for x in z.open(wheels[0]).read(MAX_FILE+1).decode().splitlines() if x.startswith('Tag:')]
@@ -128,16 +131,21 @@ def _verify_package_artifacts(manifest:dict,cache:Path,stage:Path)->None:
                     members=[];total=0
                     for member in archive:
                         if len(members)>=MAX_FILES:raise ValueError('too many npm archive members')
-                        parts=Path(member.name).parts
-                        if not parts or parts[0]!='package' or '..' in parts or Path(member.name).is_absolute() or member.issym() or member.islnk() or not (member.isfile() or member.isdir()):raise ValueError('unsafe npm tar entry')
+                        raw_parts=member.name.split('/')
+                        if (not raw_parts or raw_parts[0]!='package'
+                                or any(part in ('', '.', '..') or ':' in part or '\\' in part or '\x00' in part for part in raw_parts)
+                                or Path(member.name).is_absolute() or member.issym() or member.islnk()
+                                or not (member.isfile() or member.isdir())):
+                            raise ValueError('unsafe npm tar entry')
                         total+=member.size
-                        if total>MAX_FILE*MAX_FILES or member.size>MAX_FILE:raise ValueError('npm archive exceeds unpacked size limits')
+                        if total>MAX_TOTAL_OUTPUT or member.size>MAX_FILE:raise ValueError('npm archive exceeds unpacked size limits')
                         members.append(member)
                     target.mkdir(parents=True)
                     for member in members:
-                        rel=Path(*Path(member.name).parts[1:])
+                        rel=Path(*member.name.split('/')[1:])
                         if not rel.parts:continue
                         out=target/rel
+                        if not out.resolve().is_relative_to(target.resolve()):raise ValueError('npm tar entry escapes target')
                         if member.isdir():out.mkdir(parents=True,exist_ok=True)
                         else:
                             out.parent.mkdir(parents=True,exist_ok=True);src=archive.extractfile(member)

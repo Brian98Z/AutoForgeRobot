@@ -54,7 +54,9 @@ def packages(xml: bytes, host_os: str|None=None) -> list[dict]:
             except ValueError: continue
             if not url or kind.lower() not in {'sha1','sha256'} or not re.fullmatch(r'[0-9a-fA-F]{40}' if kind.lower()=='sha1' else r'[0-9a-fA-F]{64}',checksum or ''): continue
             if not re.fullmatch(r'[A-Za-z0-9._;/-]+',path) or '..' in path.split('/'): continue
-            rows.append({'path':path,'revision':rev,'url':url if url.startswith('https://') else 'https://dl.google.com/android/repository/'+url,'checksum':checksum.lower(),'checksum_type':kind.lower(),'size':size})
+            full=url if url.startswith('https://') else 'https://dl.google.com/android/repository/'+url
+            if not full.startswith('https://dl.google.com/android/repository/'): continue
+            rows.append({'path':path,'revision':rev,'url':full,'checksum':checksum.lower(),'checksum_type':kind.lower(),'size':size})
     return rows
 
 def official_inventory() -> dict:
@@ -202,6 +204,8 @@ def _download_package(pkg: dict, cache: Path) -> Path:
     if target.exists():
         if not valid(target): raise AndroidBuildError('cached SDK archive checksum mismatch')
         return target
+    if not isinstance(pkg.get('url'),str) or not pkg['url'].startswith('https://dl.google.com/android/repository/'):
+        raise AndroidBuildError('refusing non-Google Android package URL')
     req=urllib.request.Request(pkg['url'],headers={'User-Agent':USER_AGENT})
     tmp=target.with_suffix('.part'); h=hashlib.new(pkg['checksum_type']); size=0
     try:
@@ -257,11 +261,28 @@ def provision(sdk: Path, api: str, build_tools: str, java_zip: str|None, accept_
         receipts.append({'path':name,'publisher_checksum':pkg['checksum'],'checksum_type':pkg['checksum_type'],'download_sha256':sha_file(archive),'size':pkg['size']})
     return {'status':'PROVISIONED','sdk':str(sdk),'repository_xml_sha256':inv['repository_xml_sha256'],'packages':receipts,'license_acknowledged':True,'limitations':['Official package SHA-1 is recorded with independent local download SHA-256; no Google signature verification is claimed.','User-local SDK only; no global PATH or system configuration changed.']}
 
-def _run(argv:list[str],timeout:int=120)->str:
-    try:r=subprocess.run(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout,check=False,close_fds=True)
-    except (OSError,subprocess.TimeoutExpired) as e: raise AndroidBuildError(f'tool unavailable or timed out: {argv[0]}') from e
-    if r.returncode: raise AndroidBuildError(f'tool failed ({argv[0]}): {r.stderr[-3000:].decode("utf-8","replace")}')
-    return r.stdout.decode('utf-8','replace')
+def _run(argv:list[str],timeout:int=120,limit:int=1048576)->str:
+    import tempfile
+    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+        try:
+            proc=subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=stdout,stderr=stderr,close_fds=True)
+        except OSError as e: raise AndroidBuildError(f'tool unavailable: {argv[0]}') from e
+        started=time.monotonic()
+        try:
+            while True:
+                if os.fstat(stdout.fileno()).st_size>limit or os.fstat(stderr.fileno()).st_size>limit:
+                    raise AndroidBuildError(f'tool output exceeded limit: {argv[0]}')
+                if proc.poll() is not None: break
+                if time.monotonic()-started>timeout: raise AndroidBuildError(f'tool timed out: {argv[0]}')
+                time.sleep(0.02)
+        finally:
+            if proc.poll() is None:
+                proc.kill(); proc.wait()
+        stdout.seek(0); data=stdout.read(limit+1)
+        stderr.seek(0); err=stderr.read(3000)
+    if proc.returncode: raise AndroidBuildError(f'tool failed ({argv[0]}): {err.decode("utf-8","replace")}')
+    if len(data)>limit: raise AndroidBuildError(f'tool output exceeded limit: {argv[0]}')
+    return data.decode('utf-8','replace')
 
 def build(manifest_path: Path, sdk: Path, out: Path, engine: str, image: str, build_tools_version: str='36.0.0') -> dict:
     manifest=json.loads(manifest_path.read_text(encoding='utf8'))

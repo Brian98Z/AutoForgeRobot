@@ -43,6 +43,7 @@ def main():
         job=rt.enqueue({'work':'once'},max_attempts=2,idempotency_key='queue-smoke')
         assert rt.enqueue({'work':'once'},max_attempts=2,idempotency_key='queue-smoke')['id']==job['id']
         rejected(lambda:rt.enqueue({'different':'payload'},max_attempts=2,idempotency_key='queue-smoke'))
+        now[0]+=7; assert rt.enqueue({'work':'once'},max_attempts=2,idempotency_key='queue-smoke')['id']==job['id']
         rt=c.ComponentRuntime(root,clock=lambda:now[0]);claim=rt.claim();assert claim['id']==job['id'] and claim['attempt']==1
         rejected(lambda:rt.complete(claim['id']))
         assert rt.fail(claim['id'],'transient',lease_token=claim['lease_token'],effect='not_started')['state']=='queued'
@@ -68,19 +69,22 @@ def main():
         assert not errors and len(claimed)==len(concurrent) and len({x['id'] for x in claimed})==len(concurrent)
         # Persistent scheduled jobs enqueue one deterministic occurrence per due slot.
         rt.schedule({'task':'daily'},interval_seconds=10,schedule_id='smoke-schedule')
+        rejected(lambda:rt.schedule({'task':'daily'},interval_seconds=10,schedule_id='smoke-schedule'))
         runs=rt.run_scheduled();assert len(runs)==1 and len(rt.run_scheduled())==0
         now[0]+=35;runs=rt.run_scheduled();assert len(runs)==1
         # Bounded TTL cache expires deterministically.
         rt.cache_set('ephemeral',{'v':1},ttl_seconds=5);assert rt.cache_get('ephemeral')['hit']
         now[0]+=6;assert not rt.cache_get('ephemeral')['hit']
         # Import/export uses explicit schema, refuses collision and stays outside data root.
-        rt.put_record('one',{'answer':42});export=base/'records.json';rt.export_json(export)
+        rt.put_record('one',{'answer':42});rejected(lambda:rt.put_record('one',{'answer':43}));export=base/'records.json';rt.export_json(export)
         other=c.ComponentRuntime(base/'other',clock=lambda:now[0]);assert other.import_json(export)['imported']==1
         rejected(lambda:other.import_json(export))
         # Network calls are never implicit and unauthorized/unconfigured destinations reject.
         rejected(lambda:rt.integrate('https://example.invalid/'))
         rejected(lambda:c.ComponentRuntime(base/'no-net',authorized_hosts={'example.invalid'}).integrate('https://example.invalid/'))
         server,context=local_https(base);url=f'https://127.0.0.1:{server.server_port}/receiver'
+        insecure=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT); insecure.check_hostname=False; insecure.verify_mode=ssl.CERT_NONE
+        rejected(lambda:c.ComponentRuntime(base/'insecure-tls',tls_context=insecure))
         try:
             net=c.ComponentRuntime(base/'authorized',authorized_hosts={f'127.0.0.1:{server.server_port}'},network_authorized=True,tls_context=context)
             assert net.integrate(url)['status']==200

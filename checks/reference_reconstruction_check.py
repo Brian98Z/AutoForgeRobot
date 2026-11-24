@@ -26,6 +26,17 @@ def source_path_check(root):
   assert runner.evaluate(store,pkg['package_id'],cand,cp,engine='docker',image='sha256:'+'a'*64)['status']=='PASS'
   assert runner.evaluate(store,pkg['package_id'],wrong,cp,engine='docker',image='sha256:'+'a'*64)['status']=='FAIL'
  finally: builder.preflight=oldpre;builder._container=oldrun
+def manifest_set_check(root):
+    src=root/'manifest-source';src.mkdir();(src/'main.py').write_text('print(1)\n',encoding='utf-8');(src/'extra.txt').write_text('x',encoding='utf-8')
+    data=(src/'main.py').read_bytes();entry={'path':'main.py','size':len(data),'sha256':hashlib.sha256(data).hexdigest()}
+    payload={'schema':1,'goal':None,'references':None,'files':[entry]}
+    manifest={**payload,'workspace':str(src.resolve()),'candidate_sha256':runner._sha(runner._canon(payload))}
+    (src/'manifest.json').write_text(json.dumps(manifest),encoding='utf-8')
+    try: runner._snapshot_candidate(src,root/'manifest-dest')
+    except runner.ReconstructionHold: pass
+    else: raise AssertionError('manifest listing a subset of files was accepted')
+
+
 def stateful_source_check(root):
     fixture=Path(__file__).resolve().parents[1]/"fixtures"/"stateful_reference"
     store=root/"stateful-store"
@@ -71,7 +82,7 @@ def stateful_source_check(root):
     assert all(item[2]=="/tmp/autoforge-stateful-ledger.json" for item in runner_calls)
 def main():
   with tempfile.TemporaryDirectory() as d:
-   root=Path(d); source_path_check(root); stateful_source_check(root); store=root/'store'; artifact=root/'artifact'; artifact.mkdir()
+   root=Path(d); source_path_check(root); manifest_set_check(root); stateful_source_check(root); store=root/'store'; artifact=root/'artifact'; artifact.mkdir()
    js="'use strict';\nlet total=0;\nfunction step(r){if(r.op==='add'&&Number.isSafeInteger(r.value)){total+=r.value;return {total};}return {error:'invalid'};}\nconst rl=require('node:readline').createInterface({input:process.stdin});rl.on('line',line=>console.log(JSON.stringify(step(JSON.parse(line)))));\n"
    (artifact/'main.js').write_text(js,encoding='utf-8')
    digest=hashlib.sha256((artifact/'main.js').read_bytes()).hexdigest()

@@ -31,22 +31,27 @@ def verify_publisher_artifact(artifact: Path, signature: Path, keyring: Path, *,
     for path in (artifact, signature, keyring):
         if not isinstance(path, Path) or not path.is_file() or path.is_symlink():
             raise ProvenanceRefused("artifact, detached signature and pinned keyring must be regular files")
+    snapshots: list[Path] = []
     try:
-        artifact_digest = hashlib.sha256()
-        with artifact.open("rb") as source, tempfile.NamedTemporaryFile(prefix="autoforge-publisher-", suffix=artifact.suffix, delete=False) as snapshot:
-            snapshot_path = Path(snapshot.name)
-            for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                artifact_digest.update(chunk)
-                snapshot.write(chunk)
-        digest = artifact_digest.hexdigest()
-        keyring_arg = str(keyring.resolve()).replace("\\", "/")
-        run = subprocess.run([gpgv, "--status-fd", "1", "--keyring", keyring_arg, str(signature), str(snapshot_path)],
+        def snapshot(source: Path, suffix: str) -> tuple[Path, str, int]:
+            digest = hashlib.sha256(); size = 0
+            with source.open("rb") as stream, tempfile.NamedTemporaryFile(prefix="autoforge-publisher-", suffix=suffix, delete=False) as target:
+                path = Path(target.name); snapshots.append(path)
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    size += len(chunk)
+                    if size > 1024 * 1024 * 1024: raise ProvenanceRefused("publisher input exceeds byte limit")
+                    digest.update(chunk); target.write(chunk)
+            return path, digest.hexdigest(), size
+        snapshot_path, digest, artifact_size = snapshot(artifact, artifact.suffix)
+        signature_path, signature_sha, _ = snapshot(signature, ".sig")
+        keyring_path, keyring_sha, _ = snapshot(keyring, ".gpg")
+        keyring_arg = str(keyring_path).replace("\\", "/")
+        run = subprocess.run([gpgv, "--status-fd", "1", "--keyring", keyring_arg, str(signature_path), str(snapshot_path)],
                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ProvenanceRefused(f"gpgv verification unavailable: {exc}") from exc
     finally:
-        if 'snapshot_path' in locals():
-            snapshot_path.unlink(missing_ok=True)
+        for path in snapshots: path.unlink(missing_ok=True)
     valid = []
     for line in run.stdout.splitlines():
         if line.startswith("[GNUPG:] VALIDSIG "):
@@ -56,11 +61,10 @@ def verify_publisher_artifact(artifact: Path, signature: Path, keyring: Path, *,
                 valid.append(fields[-1].upper() if len(fields) >= 12 else fields[2].upper())
     if run.returncode != 0 or valid != [fp]:
         raise ProvenanceRefused("detached signature invalid or signer does not exactly match the pinned fingerprint")
-    digest = artifact_digest.hexdigest()
     return {"schema": 1, "status": "PASS", "attestation": "publisher OpenPGP signature verified",
-            "publisher_fingerprint": fp, "artifact_sha256": digest, "artifact_size": artifact.stat().st_size,
+            "publisher_fingerprint": fp, "artifact_sha256": digest, "artifact_size": artifact_size,
             "source_url": source_url, "signature_url": signature_url,
-            "signature_sha256": hashlib.sha256(signature.read_bytes()).hexdigest(),
-            "keyring_sha256": hashlib.sha256(keyring.read_bytes()).hexdigest(),
+            "signature_sha256": signature_sha,
+            "keyring_sha256": keyring_sha,
             "verification": "gpgv VALIDSIG exact signer fingerprint; detached signature covers exact artifact bytes",
             "license_authority": "manual explicit operator record required; not verified here"}

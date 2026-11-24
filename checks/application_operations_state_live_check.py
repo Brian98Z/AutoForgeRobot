@@ -43,45 +43,56 @@ def main(argv=None):
         command=['python','-I','-u','-c',"import runpy,sys;sys.path.insert(0,'/candidate');runpy.run_path('/candidate/main.py',run_name='__main__')"];migration='CREATE TABLE IF NOT EXISTS migration_probe(value TEXT NOT NULL);'
         secrets={'ADMIN':uuid.uuid4().hex+'-admin','READER':uuid.uuid4().hex+'-reader'}
         private=root.parent/('autoforge-private-'+a.run_id);private.mkdir(mode=0o700);private.chmod(0o700)
-        deployment=ops.deploy(pack,root,authorization=auth,request_id=a.run_id+'-deploy',image_id=a.image_id,engine=a.engine,command=command,contract=contract,config={},phase='shadow',secret_values=secrets,private_root=private,state_volume=volume)
-        tunnel=ops.Tunnel(a.engine,deployment['container_id'],container_env.engine_env())
+        runtimes=[]
         try:
-            from application_service import _request
-            headers={'Authorization':'Bearer '+secrets['ADMIN'],'Content-Type':'application/json'}
-            created=_request(tunnel.port,'POST','/api/tasks',{'title':'operations-persisted'},headers)
-            listed=_request(tunnel.port,'GET','/api/tasks',None,headers)
-            if created!={'status':201,'body':{'id':1,'title':'operations-persisted'}} or listed!={'status':200,'body':{'items':[{'id':1,'title':'operations-persisted'}]}}:raise AssertionError(f'generated authenticated write/read failed: {created!r} {listed!r}')
-        finally:tunnel.close()
-        ops._run(a.engine,['rm','-f',deployment['container_id']])
-        backup=ops._backup_state(a.engine,a.image_id,volume,root.parent/(a.run_id+'-backup.sqlite'),root)
-        try:ops._stateful_database(a.engine,a.image_id,volume,'CREATE TABLE tasks (id INTEGER);',0,1,root,'af-migrate-'+uuid.uuid4().hex)
-        except ops.OperationsRefused as exc:
-            if 'hash-verified' not in str(exc):raise
-        migrated=ops._stateful_database(a.engine,a.image_id,volume,migration,0,1,root,'af-migrate-'+uuid.uuid4().hex)
-        if migrated.get('schema_version')!=1:raise AssertionError('migration did not update database schema version')
-        baseline_private=root.parent/('autoforge-private-'+a.run_id+'-baseline');baseline_private.mkdir(mode=0o700);baseline_private.chmod(0o700)
-        baseline=ops.deploy(pack,root,authorization=auth,request_id=a.run_id+'-baseline',image_id=a.image_id,engine=a.engine,command=command,contract=contract,config={},phase='shadow',secret_values=secrets,private_root=baseline_private,state_volume=volume)
-        baseline_promoted=ops.transition(root,authorization=auth,image_id=a.image_id,engine=a.engine,action='promote',request_id=a.run_id+'-baseline-promote')
-        restart_private=root.parent/('autoforge-private-'+a.run_id+'-restart');restart_private.mkdir(mode=0o700);restart_private.chmod(0o700)
-        persisted=ops.deploy(pack,root,authorization=auth,request_id=a.run_id+'-restart',image_id=a.image_id,engine=a.engine,command=command,contract=contract,config={},phase='shadow',secret_values=secrets,private_root=restart_private,state_volume=volume)
-        tunnel=ops.Tunnel(a.engine,persisted['container_id'],container_env.engine_env())
-        try:
-            actual=_request(tunnel.port,'GET','/api/tasks',None,{'Authorization':'Bearer '+secrets['ADMIN']})
-            if actual!={'status':200,'body':{'items':[{'id':1,'title':'operations-persisted'}]}}:raise AssertionError(f'generated data did not persist across restart: {actual!r}')
-        finally:tunnel.close()
-        ops._run(a.engine,['rm','-f',persisted['container_id']])
-        persisted_private=root.parent/('autoforge-private-'+a.run_id+'-persisted');persisted_private.mkdir(mode=0o700);persisted_private.chmod(0o700)
-        persisted=ops.deploy(pack,root,authorization=auth,request_id=a.run_id+'-persisted',image_id=a.image_id,engine=a.engine,command=command,contract=contract,config={},phase='shadow',secret_values=secrets,private_root=persisted_private,state_volume=volume)
-        before=json.loads((root/'active.json').read_text(encoding='utf-8'))
-        try:ops.deploy(pack,root,authorization=auth,request_id=a.run_id+'-failed-canary',image_id=a.image_id,engine=a.engine,command=command,contract=contract,config={},phase='canary',secret_values=secrets,private_root=restart_private,state_volume=volume,fault_after=1)
-        except ops.OperationsRefused as exc:
-            if 'configured release stop condition triggered' not in str(exc):raise
-        else:raise AssertionError('monitor failed to stop killed generated candidate')
-        if before!=json.loads((root/'active.json').read_text(encoding='utf-8')):raise AssertionError('failed canary changed active pointer')
-        promoted=ops.transition(root,authorization=auth,image_id=a.image_id,engine=a.engine,action='promote',request_id=a.run_id+'-promote')
-        rolled=ops.transition(root,authorization=auth,image_id=a.image_id,engine=a.engine,action='rollback',request_id=a.run_id+'-rollback')
-        if rolled['revision']!=baseline['revision']:raise AssertionError('code rollback did not restore prior baseline')
-        report={'schema':1,'status':'PASS','candidate_sha256':digest,'prior_generated_evidence':{'path':str(DEFAULT_EVIDENCE),'sha256':evidence_hash},'deployment':deployment,'backup':backup,'failed_migration_recovery':'prior database bytes restored and hash-verified','monitor_fault':'SIGKILL observed by business probe; active pointer unchanged','promote':promoted,'rollback':rolled,'data_rollback':'not_claimed','limitations':['No generated candidate source edits; prior evidence is separately identified and not broadened.','Image digest identity is not image safety approval.','Rollback changes code/config pointer; database data rollback is not claimed.','The state volume is retained for operator review/cleanup.']}
-        a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(report,sort_keys=True,ensure_ascii=False)+'\n',encoding='utf-8')
+         deployment=ops.deploy(pack,root,authorization=auth,request_id=a.run_id+'-deploy',image_id=a.image_id,engine=a.engine,command=command,contract=contract,config={},phase='shadow',secret_values=secrets,private_root=private,state_volume=volume)
+         runtimes.append(deployment.get('container_id'))
+         tunnel=ops.Tunnel(a.engine,deployment['container_id'],container_env.engine_env())
+         try:
+             from application_service import _request
+             headers={'Authorization':'Bearer '+secrets['ADMIN'],'Content-Type':'application/json'}
+             created=_request(tunnel.port,'POST','/api/tasks',{'title':'operations-persisted'},headers)
+             listed=_request(tunnel.port,'GET','/api/tasks',None,headers)
+             if created!={'status':201,'body':{'id':1,'title':'operations-persisted'}} or listed!={'status':200,'body':{'items':[{'id':1,'title':'operations-persisted'}]}}:raise AssertionError(f'generated authenticated write/read failed: {created!r} {listed!r}')
+         finally:tunnel.close()
+         ops.remove_runtime(a.engine,deployment['container_id'])
+         backup=ops._backup_state(a.engine,a.image_id,volume,root.parent/(a.run_id+'-backup.sqlite'),root)
+         try:ops._stateful_database(a.engine,a.image_id,volume,'CREATE TABLE tasks (id INTEGER);',0,1,root,'af-migrate-'+uuid.uuid4().hex)
+         except ops.OperationsRefused as exc:
+             if 'hash-verified' not in str(exc):raise
+         migrated=ops._stateful_database(a.engine,a.image_id,volume,migration,0,1,root,'af-migrate-'+uuid.uuid4().hex)
+         if migrated.get('schema_version')!=1:raise AssertionError('migration did not update database schema version')
+         baseline_private=root.parent/('autoforge-private-'+a.run_id+'-baseline');baseline_private.mkdir(mode=0o700);baseline_private.chmod(0o700)
+         baseline=ops.deploy(pack,root,authorization=auth,request_id=a.run_id+'-baseline',image_id=a.image_id,engine=a.engine,command=command,contract=contract,config={},phase='shadow',secret_values=secrets,private_root=baseline_private,state_volume=volume)
+         runtimes.append(baseline.get('container_id'))
+         baseline_promoted=ops.transition(root,authorization=auth,image_id=a.image_id,engine=a.engine,action='promote',request_id=a.run_id+'-baseline-promote')
+         restart_private=root.parent/('autoforge-private-'+a.run_id+'-restart');restart_private.mkdir(mode=0o700);restart_private.chmod(0o700)
+         persisted=ops.deploy(pack,root,authorization=auth,request_id=a.run_id+'-restart',image_id=a.image_id,engine=a.engine,command=command,contract=contract,config={},phase='shadow',secret_values=secrets,private_root=restart_private,state_volume=volume)
+         runtimes.append(persisted.get('container_id'))
+         tunnel=ops.Tunnel(a.engine,persisted['container_id'],container_env.engine_env())
+         try:
+             actual=_request(tunnel.port,'GET','/api/tasks',None,{'Authorization':'Bearer '+secrets['ADMIN']})
+             if actual!={'status':200,'body':{'items':[{'id':1,'title':'operations-persisted'}]}}:raise AssertionError(f'generated data did not persist across restart: {actual!r}')
+         finally:tunnel.close()
+         ops.remove_runtime(a.engine,persisted['container_id'])
+         persisted_private=root.parent/('autoforge-private-'+a.run_id+'-persisted');persisted_private.mkdir(mode=0o700);persisted_private.chmod(0o700)
+         persisted=ops.deploy(pack,root,authorization=auth,request_id=a.run_id+'-persisted',image_id=a.image_id,engine=a.engine,command=command,contract=contract,config={},phase='shadow',secret_values=secrets,private_root=persisted_private,state_volume=volume)
+         runtimes.append(persisted.get('container_id'))
+         before=json.loads((root/'active.json').read_text(encoding='utf-8'))
+         try:ops.deploy(pack,root,authorization=auth,request_id=a.run_id+'-failed-canary',image_id=a.image_id,engine=a.engine,command=command,contract=contract,config={},phase='canary',secret_values=secrets,private_root=restart_private,state_volume=volume,fault_after=1)
+         except ops.OperationsRefused as exc:
+             if 'configured release stop condition triggered' not in str(exc):raise
+         else:raise AssertionError('monitor failed to stop killed generated candidate')
+         if before!=json.loads((root/'active.json').read_text(encoding='utf-8')):raise AssertionError('failed canary changed active pointer')
+         promoted=ops.transition(root,authorization=auth,image_id=a.image_id,engine=a.engine,action='promote',request_id=a.run_id+'-promote')
+         rolled=ops.transition(root,authorization=auth,image_id=a.image_id,engine=a.engine,action='rollback',request_id=a.run_id+'-rollback')
+         if rolled['revision']!=baseline['revision']:raise AssertionError('code rollback did not restore prior baseline')
+         report={'schema':1,'status':'PASS','candidate_sha256':digest,'prior_generated_evidence':{'path':str(DEFAULT_EVIDENCE),'sha256':evidence_hash},'deployment':deployment,'backup':backup,'failed_migration_recovery':'prior database bytes restored and hash-verified','monitor_fault':'SIGKILL observed by business probe; active pointer unchanged','promote':promoted,'rollback':rolled,'data_rollback':'not_claimed','limitations':['No generated candidate source edits; prior evidence is separately identified and not broadened.','Image digest identity is not image safety approval.','Rollback changes code/config pointer; database data rollback is not claimed.','The state volume is retained for operator review/cleanup.']}
+         a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(report,sort_keys=True,ensure_ascii=False)+'\n',encoding='utf-8')
+        finally:
+         # Every revision container above is disposable test state. The volume itself stays
+         # for operator review, but no runtime may remain between suite runs.
+         for cid in runtimes:
+          if cid:ops.remove_runtime(a.engine,cid)
         print(json.dumps({'status':'PASS','evidence':str(a.output),'candidate_sha256':digest,'volume':volume,'data_rollback':'not_claimed'}));return 0
 if __name__=='__main__':raise SystemExit(main())

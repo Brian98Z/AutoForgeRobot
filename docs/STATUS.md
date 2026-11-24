@@ -44,6 +44,169 @@ Current package verification: `python checks/frozen_delivery_check.py dist/autof
 
 ## Status
 
+### Astra relay audit of maintenance, resources, evidence and review packets (2026-11-24)
+
+- Request/response: `bootstrap-runs/astra-audit-maint-20261124-222321/` (`gpt-6.2-astra`, 11,433 prompt / 3,270 completion tokens).
+- Adopted, maintenance: failed exports remove the partially created destination (only when this call created it), so a later export is not permanently blocked; `replay --report` requires an absent destination, rejects symlinks and writes exclusively with `xb`.
+- Adopted, resources: all four cgroup counters (`peak_memory_bytes`, `cpu_usage_usec`, `user_cpu_usec`, `system_cpu_usec`) require nonnegative integer types before becoming evidence.
+- Adopted, review packet: the index is read once, parsed and digested from those same bytes (`source_index_sha256` now identifies the consumed index); duplicate original evidence paths are refused before output creation, matching the verifier's rules.
+- Not adopted: none in this batch.
+- Regression coverage: `application_delivery_maintenance_check` (existing recursive/existing export refusal), `application_image_scan_check` (packet verification), `quality_resources_live_check` (real container counters).
+- Final image `sha256:d5c325e0414f9dc661fbaa2223ac690d2a6ab87dcb327ca992a6acc35c4b4541`: **76/76** (711 s); baseline `iter-20261124q`.
+
+### Astra relay audit of project, capabilities, data policy and acceptance (2026-11-24)
+
+- Request/response: `bootstrap-runs/astra-audit-project-20261124-220720/` (`gpt-6.2-astra`, 11,658 prompt / 2,343 completion tokens).
+- Adopted, data policy: disclosure traversal now converts tuples to lists and rejects non-JSON Python objects, closing the json.dumps tuple leak; `endpoint_identity` rejects invalid ports and any userinfo (including empty `@`).
+- Adopted, project: transaction output and source may not contain one another in either direction; revision manifests must bind their own resolved workspace; `active.json` reads are capped at 4 KiB and require exact schema type plus revision/digest/previous shapes; CLI refusal path now imports `sys`.
+- Adopted, capabilities: an exit-zero check with no parseable structured result is `BLOCKED`, not `PASS`.
+- Adopted, acceptance: only the authored browser fixture may run; redaction covers dictionary keys as well as values and runs with the secret values even when preparation failed; the report is published with exclusive-create (`xb`) instead of check-then-truncate.
+- Not adopted: `_safe_target` already rejects `..` through `Path.absolute()` normalization and root-relative checks (audit claim did not hold); component-wise descriptor traversal and retention-record persistence remain larger rewrites; subprocess output/time limits for capability checks are pre-existing medium issues tracked by their scope text.
+- Regression coverage: `application_data_policy_check` (tuple redaction, malformed ports/userinfo), `application_project_check` (boolean pointer schema), `application_capabilities_check` (existing mixed-status matrix).
+
+### Astra relay audit of authentication, secrets, effects and browser (2026-11-24)
+
+- Request/response: `bootstrap-runs/astra-audit-auth-20261124-214907/` (`gpt-6.2-astra`, 9,640 prompt / 3,875 completion tokens).
+- Adopted, secrets: mount resolution reads through one descriptor (`O_NOFOLLOW`, regular-file `fstat`, 16 KiB cap) and, when the ownership manifest is supplied, requires every resolved name to be listed and its SHA-256 to match; cleanup re-reads through the descriptor, checks inode/size stability before unlinking and refuses changed secrets for operator inspection.
+- Adopted, auth: session-store envelopes validate `state`/`sessions` types before canonicalization and translate digest failures into `AuthRefused`; `hash_password` requires bytes salt; redaction covers `access_token`, `refresh_token`, `id_token` and `client_secret`.
+- Adopted, effects: ledger loading validates the envelope, `state` schema (schema/requests/events), request-map type and digest before access, returning `EffectRefused` for corrupt or non-object ledgers; stale request records are type-checked.
+- Adopted, browser: route guard requires the attested origin's exact scheme, hostname and port for HTTP(S); `data:`/`blob:`/`about:` remain allowed as non-network document resources.
+- Not adopted: secret digest binding is opt-in via `manifest=` because mount descriptors are not part of `resolve_secret_files`' existing config contract; callers that omit the manifest keep filesystem-bound validation only.
+- Regression coverage: `application_auth_check` (expanded redaction, non-bytes salt, malformed store), `application_auth_check` secret digest mismatch, `application_effects_check` (malformed ledger), `application_browser_check` (existing real-browser route guard).
+
+### Astra relay audit of gates, plans, projects and oracle (2026-11-24)
+
+- Request/response: `bootstrap-runs/astra-audit-gates-20261124-214329/` (`gpt-6.2-astra`, 22,066 prompt / 2,877 completion tokens).
+- Adopted, provenance: artifact, detached signature and keyring are each copied to private snapshots before `gpgv`; reported `artifact_sha256`, `artifact_size`, `signature_sha256` and `keyring_sha256` all derive from those same snapshots, so post-verification file changes cannot alter the record. Publisher inputs are capped at 1 GiB (the retained Julia artifact is ~303 MB).
+- Adopted, plan: `spec_sha256` must be lowercase 64-hex; `requirement_ids`/`acceptance_ids` must be nonempty unique string lists, rejecting malformed or forged bindings before load/save.
+- Not adopted, with rationale: `--builder-argv` / plan `argv` are documented operator-supplied trusted adapters (candidate code is never executed); the plan binds argv by digest in completion evidence. Quality records, strategy promotion and reconcile evidence remain caller-supplied under the project's explicit "self-report is not independent evidence" model; adding signatures/allowlists would change the operator interface, not a concrete bypass inside it.
+- Regression coverage: `application_plan_check` (non-hex spec digest, empty and duplicate requirement/acceptance bindings).
+
+### Astra relay audit of references, specifications and learned experience (2026-11-24)
+
+- Request/response: `bootstrap-runs/astra-audit-ref-20261124-210147/` (`gpt-6.2-astra`, 23,183 prompt / 3,894 completion tokens).
+- Adopted, reconstruction: every reference package path is revalidated with `_safe_reference_path` before any filesystem join (absolute, `.`/`..`, non-canonical POSIX forms refused); staged-candidate manifests must list exactly the files present, so extra or nonexistent recorded paths can no longer be bound into `candidate_sha256`.
+- Adopted, learning: `record_experience` requires `validator.independent is True`, requires `validator.report_sha256` to equal the selected report bytes digest, and stores canonical four-field source/report references. `retrieve_experiences` now re-runs the complete `record_experience` validation (source and report packages re-read) instead of a partial check; non-object experience files are refused.
+- Adopted, specification: `propose_from_goal` bounds `goal` to 32,768 UTF-8 bytes before prompt construction, matching design context and review feedback.
+- Not adopted: evidence ID existence/provenance binding needs an evidence registry that `build_reference_model` does not have (IDs are opaque citations); the reported reference-path escape is already blocked by `references._load_package` validation, so the write-site check is defense in depth.
+- Regression coverage: `application_learning_check` (non-independent validator, mismatched report digest, non-object record), `reference_reconstruction_check` (subset manifest), `application_spec_check` (oversized goal).
+
+### Astra relay audit of components, database, service and Android build (2026-11-24)
+
+- Request/response: `bootstrap-runs/astra-audit-components-20261124-211749/` (`gpt-6.2-astra`, 26,799 prompt / 4,184 completion tokens).
+- Adopted, components: an injected `tls_context` must have `CERT_REQUIRED` and `check_hostname` enabled; queue idempotency digests store the caller's relative delay (replay no longer depends on `now`); duplicate schedule IDs and record IDs return typed `ComponentError` instead of `sqlite3.IntegrityError`.
+- Adopted, database: PostgreSQL migrations reject transaction-control tokens anywhere in the SQL, not only at line starts (`END` remains line-anchored to avoid `CASE ... END`), closing `SELECT 1; COMMIT; ...` wrapper escape in both migrate and accept paths.
+- Adopted, Android: repository XML rows and `_download_package` accept only `https://dl.google.com/android/repository/` URLs before any request; non-Google URLs are dropped or refused before connection.
+- Adopted, bounded output: `application_service._run` and `application_android_build._run` stream child output into temporary files, fail once either stream exceeds its limit, and terminate the child; post-exit capture no longer decides memory use.
+- Not adopted: component storage and import/export path races require a local writer with access to the private state root (who can also edit the SQLite store); the Android source race copies and re-hashes before the build uses the file, so a concurrent change aborts rather than binds unverified bytes; the service `/state` volume remains quota-free and is documented as a limitation.
+- Regression coverage: `application_components_check` (clock-advanced idempotent replay, duplicate schedule/record, insecure TLS), `application_database_check` (mid-statement transaction control), `application_android_build_check` (non-Google URL).
+
+### Astra relay audit of operations, delivery and evaluation (2026-11-24)
+
+- Request/response: `bootstrap-runs/astra-audit-ops-20261124-204220/` (`gpt-6.2-astra`, 24,591 prompt / 3,987 completion tokens) over `application_operations.py`, `application_delivery.py`, `application_evaluation.py`.
+- Adopted, delivery: pack and candidate bytes are read through one descriptor with `O_NOFOLLOW` (where available), a regular-file check on the opened handle, per-file 64 MiB and per-pack 256 MiB caps; the lstat-then-read race no longer decides what is hashed.
+- Adopted, evaluation: `_validate_run_manifest` requires each lane to be exactly `{argv, argv_sha256}`, rejects NUL/non-string argv before access, and `execute_lane` converts `Popen` argument failures into a bounded `EvaluationRefused` instead of an uncaught `ValueError`/`AttributeError`.
+- Regression coverage extended in `application_delivery_check` (directory/symlink reads refused) and `application_evaluation_check` (malformed lane objects, NUL argv).
+- Not adopted, with rationale: JSON `approved`/`adapter_authorized` booleans are explicit operator CLI inputs under the documented authorization model; lane argv is documented as the operator's trusted adapter, with candidate execution delegated to the container builder; delivery/evaluation PASS fields and gate digests are caller self-reports by design, while the project's evidence is the independent check suite; the backup destination is an explicit operator CLI output, not candidate-controlled.
+- Final image `sha256:f7a8f19e2b693eadc5e5443afbafda07ac0675f222ce628b7991b184f822fb33`: **76/76** (625 s); baseline `iter-20261124p`.
+
+### Astra relay audit of supply-chain and platform adapters (2026-11-24)
+
+- Request/response: `bootstrap-runs/astra-audit-supply-20261124-202442/` (`gpt-6.2-astra`, 36,914 prompt / 3,806 completion tokens) over `application_dependencies.py`, `application_toolchain.py`, `application_platform.py`.
+- Adopted, platform: manifests require a nonempty file list and reject `:` in any path component; `_realtime` and `_desktop` execute from a private snapshot containing only digest-bound listed files (no whole-directory mount, no unlisted files), with cleanup on success, failure and preflight refusal.
+- Adopted, dependencies: acquisition/import require `authorized is True` and a nonblank license record; artifact, cache proof, local inventory and existing-cache reads are bounded; cache staging temp files are uniquely named and unlinked only when owned; local paths reject drive-qualified components; reviewer/signer distinctness compares canonical DER SPKI instead of PEM bytes; Grype exit 1 with zero findings is HOLD; `refresh-osv` writes canonical bytes without a newline so the exported file can pass signature verification.
+- Adopted, toolchain: npm members are validated as raw POSIX components before any host path construction, with a final containment check; wheel/npm cumulative unpacked size is capped at `MAX_TOTAL_OUTPUT` (128 MiB) instead of 64 MiB × 20,000; partial `~` ranges use the minor upper bound (`~1.2` no longer accepts `1.9.0`).
+- Regression coverage extended in `application_platform_check` (empty manifest, colon path, snapshot inventory), `application_dependencies_check` (non-boolean authorization, blank license) and `application_toolchain_check` (`~`/`^` semantics).
+- Deferred with rationale: self-consistent toolchain manifest authorization needs an operator-supplied environment digest; cache artifacts are verified then reopened rather than copied once; npm pre-bundled `node_modules` and per-parent edge equality; Java class body validation; output publication race; Android package/launcher binding and evidence freshness; realtime probe path binding and authority nonce consumption; adapter/EXE/APK path replacement after hashing; process stream caps.
+- Final image `sha256:405ff510c07baa3eb5d72597b633cb2f4da83cc10f4090e197e3c1c2363cddde`: **76/76** (629 s); baseline `iter-20261124o`.
+
+### Astra relay audit of the trust-boundary core (2026-11-24)
+
+- Request/response: `bootstrap-runs/astra-audit-core-20261124-194056/` (`gpt-6.2-astra`, 21,087 prompt / 2,739 completion tokens) over `applications.py`, `application_builder.py`, `application_proposer.py`, `application_oracle.py`, `application_checkpoint.py`.
+- Adopted, strict JSON: `applications._read_json/_json_bytes`, `application_checkpoint.load` and the oracle decoders reject duplicate keys, nonstandard constants and nonfinite values at the decode boundary; serialization uses `allow_nan=False`.
+- Adopted, staging integrity: `_verify_staged_files` validates record schema, size bounds, digest syntax, duplicate/case collisions, aggregate size, regular-file type, symlink components and the **whole inventory** (controller metadata `manifest.json`/`validation.json` excepted) before reading.
+- Adopted, publication: reports are written through `_publish_report` (exclusive temp, fsync, `os.replace`) and refuse a symlink or non-regular leaf; the three `write_text` report paths are gone.
+- Adopted, checkpoint: `_atomic` unlinks only a temp it created and propagates directory-sync failure on POSIX; checkpoint loads require a regular file; `_argv_identity` fails closed instead of skipping unreadable adapter arguments.
+- Adopted, builder: every manifest path component is checked (drive prefix/colon included); diagnostics accept only `[A-Za-z0-9._-]` components inside the workspace and parse the already-verified file; stdout framing uses byte LF, strips CR, rejects empty/oversized lines.
+- Adopted, oracle: contract/ledger/manifest reads are bounded before allocation; `--contract=` spellings are refused; dispatch artifact digests are validated on every branch, arbitrary `external_effect` values collapse to `unknown`, public results and serialized ledgers are size-capped.
+- New deterministic check `checks/application_staging_check.py` covers duplicate/nonfinite JSON, manifest bounds and inventory, symlinked report leaves, drive-qualified manifest components and hostile traceback paths.
+- Deferred with rationale: authenticated checkpoint/ledger generations need a trust anchor outside the session writer (architectural); builder mounts the verified live directory rather than a private copy; the oracle reopens the contract path after hashing; adapter descendants can outlive a killed leader; the final report is published after the session lock is released; adapter pipes are not drained with incremental caps. Each is recorded here rather than partially patched.
+- Final image `sha256:e7542f68ef528ee66d78a1c012528b9c89544fa312a8361da2cb3048dbed96b0`: **76/76** (555 s); baseline `iter-20261124n`. The stateful profile now allows 48 turns / 6M reserved tokens; an earlier run on the same image hit the 32-turn cap while creating auxiliary test files, and a standalone rerun passed at 19 turns.
+
+### Astra relay audit of the refusal and budget changes (2026-11-24)
+
+- Request/response retained: `bootstrap-runs/astra-audit-20261124-185326/` (`gpt-6.2-astra`, 29,658 prompt / 3,943 completion tokens).
+- Adopted: refusal provenance is now structured. `applications.Refused` carries `adapter_returncode`/`adapter_stderr` set only by `_run_json_command`, and `_refused_validation` requires exit 2 plus a strict single JSON `{"status": "FAIL", "reason": <str>}` payload. The earlier text-prefix parse is gone.
+- Real bug found by the audit's resume scenario: a refused `validate` never wrote `last_validation`, `last_validation_source` or `validated_candidate`, so a persisted session resumed without its baseline. The bookkeeping now runs for every validate outcome, after the exception path.
+- Shared ceiling: `agent_budget.MAX_OUTPUT_TOKENS` is the single 8192 constant; `agent_transport.MAX_TOKENS` imports it. Boundary tests assert 8192 accepted / 8193 rejected in both layers, the reservation reports 8192, and malformed refusal payloads stay terminal.
+- Deferred with rationale: process-global `_STOP` and the controls/dispatch window are pre-existing designs. Each suite check runs in its own process, and the checks that assert the unknown-side-effect path depend on the current signal semantics; a per-run cancellation refactor is larger than this audit and was not attempted.
+- Slow host model: one suite run hit the 480 s shared per-check timeout with a 32-call stateful session (471 s across 24 calls). The check now has a 1300 s suite allowance and a 1200 s internal model budget; a standalone run completed in 411 s at 32 turns.
+- Final image `sha256:559e7036f2ce59c979440cb4303508257c0407c0b03662f96c5dbc3521204cd5`: **75/75** (730 s, stateful 151 s); baseline `iter-20261124l`. All affected deterministic checks passed inside the image, including the new refusal-provenance and budget-boundary assertions.
+
+### Live-model checks made deterministic where the controller was wrong (2026-11-24)
+
+- `agent_runtime` classified every `validate` exception as `unknown_tool_side_effect` and stopped the session. A builder exit 2 with `{"status": "FAIL", "reason": ...}` is a deterministic pre-execution refusal (no container started), so `_refused_validation` now returns it as a normal FAIL tool result and the model can repair and revalidate. Timeouts, STOP, truncated output and non-JSON refusals keep the terminal HOLD; `agent_container_recovery_check`, `agent_recovery_check` and `agent_oracle_check` still observe that path.
+- Regression coverage in `checks/agent_runtime_check.py`: refusal → repair → PASS, and an `adapter deadline exceeded` refusal still HOLDs.
+- Completion budget was 4096 tokens; long hidden reasoning consumed it and produced `TransportError: truncation` with no tool call. `agent_transport.MAX_TOKENS` and `Limits.output_tokens` are now 8192 (still the enforced ceiling); the host model runs with `--reasoning-budget 2048` (documented in `docker/README.md`) so thinking cannot eat the whole turn.
+- The stateful suite profile uses 32 turns and a 4,000,000-token reservation (local model, no billing) so `model_call_budget`/`token_budget` no longer cut off a converging loop.
+- Observed after the changes: `stateful_reconstruction_check` 5/5 PASS (10–23 turns), `agent_business_check` 3/3 PASS, and three consecutive full suites **75/75** (570 s, 586 s, 609 s); final image `sha256:84164abb2b0a384a3fdeb7d00800908d599d299f74862e73203da8abaf59e949`, baselines `iter-20261124j` and `iter-20261124k`.
+- Limits: these are live-model checks; the sample proves the observed failure modes are fixed, not a general reliability guarantee. No automatic retries were added.
+
+### Container profile closed three rc=0 coverage gaps (2026-11-24)
+
+- `business_check` accepted `--engine/--image` but the suite supplied neither, so it printed `BLOCKED / runtime: NOT_TESTED` and exited 0 inside a passing suite.
+- `application_platform_check` likewise only tested the host transport unless `--live-realtime` was requested.
+- `application_database_check` reported `IMPLEMENTED_NOT_EXERCISED` without a test database.
+- The container profile now passes the engine and the exact local config ID to `business_check` (real candidate execution: `PASS / TESTED_IN_CONTAINER`), and to `application_platform_check` together with `--live-realtime` and a report path under the run directory, keeping evidence out of the workspace.
+- `application_database_check` receives `--self-check-db` in a fresh run directory, exercising SQLite unique constraints, transaction rollback, serialized updates, backup, reopen persistence and failed-migration restore.
+- Verified directly before rebuilding: business runtime 1.1 s in-suite (`TESTED_IN_CONTAINER`), platform live `PASS`, SQLite self-check `PASS`, no `application-platform-realtime-*.json` left in `/workspace/autoforge`.
+- Suite tails now drop separator-only lines written by standard-library server threads, so the check's own verdict is the recorded last line.
+- One full run recorded `stateful_reconstruction_check` HOLD on a model `TransportError: truncation` at the 4096-output-token limit (11 calls); a standalone rerun of the identical check passed. The suite does not retry: the HOLD is a real model-side failure, not an infrastructure defect.
+- Final image `sha256:3e2ed7b86a8687dadd0d3984e0d1f31045e942e3b7fcad373c1ce1b79651b0e3`: **74/75**, with `agent_business_check` holding because the model called `validate` before creating the required `main.py` (`unknown_tool_side_effect`, a classification asserted by `agent_container_recovery_check` and `agent_recovery_check`). A standalone rerun of the same check passed; baseline `iter-20261124i` records the suite result as-is.
+
+### Pre-registered benchmark regeneration and full pass (2026-11-24)
+
+- `bootstrap-runs/benchmark-registration-20261124/preregistration.json` fixed the fixtures (task/contract/inventory digests), model (Qwen3.6-35B-A3B at 8081), budgets (12 turns, 500 000 tokens, 200 s, 64 tools), acceptance (independent check, seed 21104, 80 cases, one repetition) and the activation rule before any model contact.
+- The driver itself had three defects: the pinned manifest digest was passed to `docker run` instead of the resolved config ID, an undefined `mutations` counter crashed report writing, and `source_sha256` paths omitted `autoforge/`. The first invocation generated a candidate and then crashed on the counter; it is retained and was not counted as a candidate round.
+- Four rounds ran; all outputs and evaluations are retained:
+
+| round | result | finding |
+|---|---|---|
+| 1 | 1/4 PASS | ticket/content-render crashed on malformed input; inventory accepted a boolean quantity |
+| 2 | 3/4 PASS | ticket returned an extra `status` for a non-transition operation |
+| 3 | 0/4 eligible | ticket and content-render wrote auxiliary files; the single-file candidate contract rejected the set |
+| 4 | 4/4 PASS | activated |
+
+- Two amendments were written before their rounds, at explicit user instruction: the attempt cap was raised (2→3→4) and generic, spec-derived clarifications were appended to the goal (strict input types, invalid objects return only the contract error, exactly one `main.py`). No evaluator test vector was disclosed to the model; the historical defaults and every failed round remain.
+- Activation is byte-verified: `fixtures/benchmark/active.json` names the four copied candidates, their SHA-256 values, source run directories, plan/amendment digests, goal-suffix digest and the acceptance report digest. `benchmark_independent_check` refuses a mismatched digest and prefers this set over the historical defaults.
+- Final suite on image `sha256:fc29117990fb5db99f9e87e2c823f4d6c5bb080166138397e2b17629ab4a0f05`: **75 total / 75 PASS / 0 FAIL**, 639 s. An earlier 75/75 run on `sha256:4b41ac6e…` was superseded only by the `docker/README.md` parity rebuild. Baseline `iter-20261124h`.
+- The benchmark report still records `semantic_approval: HOLD`: comparison PASS is not external semantic approval, and this remains a single-model, single-evaluator result.
+
+### Suite inputs closed: provenance, frozen delivery, benchmark (2026-11-24)
+
+- `application_provenance_check` now runs on retained publisher evidence instead of demanding arguments: the 302,726,241-byte official `julia-1.13.3-linux-x86_64.tar.gz` (SHA-256 `5c61cb4b40332cb5a3504e7779e2f5dac093caa4a1116ded19f01413f85c63e4`) was acquired from the exact official URL, its detached signature and the publisher key were fetched, and the key fingerprint was pinned to `64B779A570972FFF7BFC2B54EAD471E1A1F2C10A` as published on `julialang.org/downloads/manual-downloads/`. The dearmored keyring plus artifact/signature/pin are bind-mounted at `/workspace/provenance`; `gpgv` reports a good signature and the check also rejects a one-byte tamper.
+- `frozen_delivery_check` now gets the v0.1.1 Linux onefile: the suite extracts the newest `autoforge-*-linux-x64.tar.gz` member from the read-only `/workspace/release` mount and passes it as the checked executable. It passes the loopback SSE/cancel contract with zero active children.
+- `benchmark_independent_check` had an identity defect: its pin `sha256:673719e0…` is the repository *manifest* digest, while `builder.preflight` compares the local *config* ID, so the guard could never pass. Resolution now goes through the image's `RepoDigests`, requires the exact pinned reference, runs candidates on the resolved config ID, and records both identities. The pinned Python image was pulled by digest and the four historical candidates are baked into the image; the suite records an explicit `skipped:` row when the image is absent.
+- The benchmark now actually executes all four tasks and reports a real FAIL: `inventory-order-001` accepts a boolean `quantity` instead of `invalid_input`, and `ticket-status-001` crashes on a null request and adds an undefined `status` field for a non-string `from`. Direct-probe evidence is `bootstrap-runs/benchmark-candidate-defects-20261124.json`. These are candidate defects; hand-repairing them would void their generated-candidate provenance, so the row stays FAIL.
+- Full suite on the final image `sha256:4eaf80e23a55e38b94bfde3386a1ec96892e33f2d599ed1539f66d886ff0b095`: **75 total / 74 PASS / 1 non-PASS** (the benchmark candidate failure above), 575 s. An earlier identical-score run on `sha256:b0031e22…` was superseded only by the `docker/README.md` parity rebuild. Baseline `iter-20261124f`.
+
+### Operations runtime leak fixes and residue cleanup (2026-11-24)
+
+- `transition()` kept its `af-release-check-*` probe container running after a successful promote/rollback; only the failure path removed it. Removal now runs in `finally` through `application_operations.remove_runtime()`, which re-checks the `io.omp.autoforge.owner` label before deleting; the deploy failure path uses the same helper.
+- Both operations live checks now track every revision they deploy and remove it in `finally`. The stateful check previously left its final promoted revision and the baseline revision running.
+- The suite created one `af-state-<run>` volume per iteration and never reclaimed it. A passing state check now deletes the exact volume it created (`state_volume_removed: true` in the row); a failing row keeps it and records the name for diagnosis.
+- Verification: targeted `application_operations_live_check` + `application_operations_state_live_check` PASS with zero `af-release*` containers after the run, and the row shows `af-state-state20261124060438` removed. Full suite on image `sha256:7623d7c9bc534ec44abc231a85bd9eccb72a7ac820a8f6348216c0326633a891`: **75 total / 72 PASS / 3 non-PASS**. An earlier full run scored 71 because `stateful_reconstruction_check` rejected the model candidate (rc=1); an immediate rerun passed in 70.5 s, so that row is model nondeterminism and remains recorded, not silently retried.
+- Historical residue remediated individually (ownership/usage checked each time): 75 `af-release-*` containers, one exited 8-day-old `dbg` deployment container, 13 unused `af-state-*` volumes, 44 superseded `args-*` run directories, and old `/workspace/tmp` scratch (shared npm artifact cache kept). The workspace volume dropped from 168 MB to 79 MB; one prior `args-` directory referenced by the retained 2026-11-13 suite report was kept.
+- Baseline appended as `iter-20261124d`.
+
+### Container baseline refresh and frozen POSIX delivery (2026-11-24)
+
+- `Cargo.lock` still pinned the root crate at 0.1.0 after `Cargo.toml` moved to 0.1.1, so `cargo build --release --locked` refused the image rebuild (exit 101). The lock now records 0.1.1 and `cargo metadata --locked` passes.
+- The image's apt layers treated the aliyun mirror as guaranteed and failed twice (~7 minutes each) fetching `gcc-14-x86-64-linux-gnu_14.2.0-19` (connection failed, exit 100). Each install now tries aliyun and falls back to `deb.debian.org` inside the same layer; the base, Julia and Node layers share the loop.
+- Rebuilt image `sha256:8ef28a060f4d07aef364cac86c43e597975706a3304e560dbb46b16f10bdc4d2` from the current tree (including the proposer POSIX `spawn→fork` fix); after the documentation and baseline-recorder edits the final workbench image is `sha256:97541aa671acf4a1ac10fc0b5ebf56ca3942a9235a7c8cfdd8106ef61a814807`, and the seeded module and Dockerfile digests equal the host.
+- The v0.1.1 Linux onefile passes the frozen delivery contract on loopback: 3 SSE records with `service_tier`, parsed assistant turn, cancellation in 0.558 s with zero active children, and `agent_mcp --help`; four runs, evidence `bootstrap-runs/frozen-linux-20261124/frozen-delivery.json`. This is a deterministic transport check, not model quality.
+- Full suite rerun on the final image: **75 total, 72 PASS, 3 non-PASS, 0 unexpected FAIL** (601 s). The three are the documented external boundaries: provenance needs GPG signature/fingerprint inputs, benchmark accepts only its authorized image, and `frozen_delivery_check` needs an executable argument. Baseline appended as `iter-20261124c`; `docker/baseline.py` now records the controller binary digest and help mode because `--version` was never a controller command (the previous field captured an error JSON).
+
 ### External feedback iteration (2026-11-09)
 
 - Fixed PyInstaller source entrypoint and `multiprocessing.freeze_support()` dispatch ordering. Old EXE preserved under `release/windows/previous/`; new artifact/size/hash and checks recorded in `bootstrap-runs/external-feedback-20261109/closeout.json`.

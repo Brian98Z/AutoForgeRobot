@@ -26,6 +26,11 @@ def main():
   with tempfile.TemporaryDirectory() as td:
     spec=spec_fixture();argv={"implementation":make_adapter(),"verification":make_adapter()}
     p=Path(td)/"plan.json";assert plan.create(spec,argv,p)["status"]=="READY"
+    for mutate in (lambda r:r.update(spec_sha256="Z"*64),lambda r:r["tasks"][0].update(requirement_ids=[]),lambda r:r["tasks"][0].update(acceptance_ids=["A","A"])):
+        bad=json.loads(json.dumps(plan._load(p)));mutate(bad)
+        try:plan._clean(bad)
+        except plan.PlanRefused:pass
+        else:raise AssertionError("malformed spec digest or task binding was accepted")
     assert plan.pause(p)["status"]=="PAUSED";assert plan.resume(p)["status"]=="READY"
     done=plan.run(p);assert done["status"]=="SUCCEEDED"
     assert done["tasks"][0]["evidence"]["evidence_id"]=="fixture-T1"

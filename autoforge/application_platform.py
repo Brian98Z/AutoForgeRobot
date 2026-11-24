@@ -7,7 +7,7 @@ operator-selected adb executable and exact emulator/device serial. Neither adapt
 executes candidate source directly on the controller host.
 """
 from __future__ import annotations
-import argparse, hashlib, http.client, json, math, os, re, shlex, shutil, socket, subprocess, sys, time, uuid
+import argparse, hashlib, http.client, json, math, os, re, shlex, shutil, socket, subprocess, sys, tempfile, time, uuid
 from pathlib import Path
 from typing import Any
 import application_checkpoint
@@ -42,12 +42,12 @@ def _manifest(raw:Any)->tuple[Path,str]:
     if not isinstance(raw['workspace'],str) or not isinstance(raw['candidate_sha256'],str) or not re.fullmatch(r'[0-9a-f]{64}',raw['candidate_sha256']):raise PlatformRefused('invalid manifest workspace/digest')
     root=Path(raw['workspace']).resolve(strict=True)
     rows=raw['files']
-    if not isinstance(rows,list) or len(rows)>4096:raise PlatformRefused('invalid manifest file inventory')
+    if not isinstance(rows,list) or not 1<=len(rows)<=4096:raise PlatformRefused('invalid manifest file inventory')
     seen=set(); normalized=[]
     for row in rows:
         if not isinstance(row,dict) or set(row)!={'path','size','sha256'}:raise PlatformRefused('invalid manifest file record')
         rel=row['path']
-        if not isinstance(rel,str) or not rel or '\\' in rel or rel.startswith('/') or any(x in ('','.','..') for x in rel.split('/')) or rel in seen:raise PlatformRefused('unsafe or duplicate candidate path')
+        if not isinstance(rel,str) or not rel or '\\' in rel or rel.startswith('/') or any(x in ('','.','..') or ':' in x for x in rel.split('/')) or rel in seen:raise PlatformRefused('unsafe or duplicate candidate path')
         p=root.joinpath(*rel.split('/'))
         application_checkpoint.regular_chain(p)
         if p.is_symlink() or not p.is_file() or p.resolve().parent!=root and root not in p.resolve().parents:raise PlatformRefused('candidate file missing, linked, or outside workspace')
@@ -58,6 +58,32 @@ def _manifest(raw:Any)->tuple[Path,str]:
     digest=hashlib.sha256(_canonical(body)).hexdigest()
     if digest!=raw['candidate_sha256']:raise PlatformRefused('candidate manifest digest mismatch')
     return root,digest
+
+def _snapshot(root:Path,rows:list[dict],digest:str)->Path:
+    """Copy only the digest-bound listed files into a private directory for execution."""
+    base=Path(tempfile.mkdtemp(prefix='autoforge-platform-'))
+    total=0
+    try:
+        for row in rows:
+            source=root.joinpath(*row['path'].split('/'))
+            application_checkpoint.regular_chain(source)
+            st=source.lstat()
+            if source.is_symlink() or st.st_size!=row['size'] or _sha(source)!=row['sha256']:
+                raise PlatformRefused(f'candidate file changed before staging: {row["path"]}')
+            data=source.read_bytes()
+            if len(data)!=row['size'] or hashlib.sha256(data).hexdigest()!=row['sha256']:
+                raise PlatformRefused(f'candidate file changed during staging: {row["path"]}')
+            total+=len(data)
+            if total>MAX_INPUT:raise PlatformRefused('candidate snapshot exceeds byte limit')
+            target=base.joinpath(*row['path'].split('/'))
+            target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_bytes(data);target.chmod(0o644)
+        base.chmod(0o755)
+    except BaseException:
+        shutil.rmtree(base,ignore_errors=True)
+        raise
+    return base
+
 
 def _authority(auth:Any,platform:str,target:str,digest:str,execution:dict)->None:
     expires=auth.get('expires_at') if isinstance(auth,dict) else None
@@ -99,10 +125,14 @@ def _desktop(manifest,contract,authority,runner,runner_sha,timeout,artifact_path
     execution={'runner_sha256':runner_sha,'timeout_seconds':timeout,'artifact':{'path':artifact_path,'sha256':artifact_sha,'args':artifact_args}}
     _authority(authority,'desktop',target,digest,execution)
     scenarios=contract['scenarios'];run_id=uuid.uuid4().hex
-    request={'schema':1,'operation':'build-install-launch-interact','candidate_root':str(root),'candidate_sha256':digest,'target':target,'artifact':execution['artifact'],'scenarios':scenarios,'timeout_seconds':timeout,'run_id':run_id}
+    snapshot=_snapshot(root,manifest['files'],digest)
+    request={'schema':1,'operation':'build-install-launch-interact','candidate_root':str(snapshot),'candidate_sha256':digest,'target':target,'artifact':execution['artifact'],'scenarios':scenarios,'timeout_seconds':timeout,'run_id':run_id}
     argv=[sys.executable,str(exe)] if exe.suffix.lower()=='.py' else [str(exe)]
-    try:p=subprocess.run(argv,input=_canonical(request),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout+45,check=False,env={'PATH':os.environ.get('PATH',''),'SYSTEMROOT':os.environ.get('SYSTEMROOT',''),'WINDIR':os.environ.get('WINDIR',''),'PYTHONPATH':str(Path(__file__).resolve().parents[1])},close_fds=True)
-    except (OSError,subprocess.TimeoutExpired) as e:raise PlatformRefused('native isolated desktop runner unavailable or timed out') from e
+    try:
+        try:p=subprocess.run(argv,input=_canonical(request),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout+45,check=False,env={'PATH':os.environ.get('PATH',''),'SYSTEMROOT':os.environ.get('SYSTEMROOT',''),'WINDIR':os.environ.get('WINDIR',''),'PYTHONPATH':str(Path(__file__).resolve().parents[1])},close_fds=True)
+        except (OSError,subprocess.TimeoutExpired) as e:raise PlatformRefused('native isolated desktop runner unavailable or timed out') from e
+    finally:
+        shutil.rmtree(snapshot,ignore_errors=True)
     if p.returncode:raise PlatformRefused('desktop runner rejected or failed: '+p.stderr[:1024].decode('utf8','replace').strip()+'; no success inferred')
     if len(p.stdout)>MAX_REPORT:raise PlatformRefused('desktop runner report exceeds limit')
     report=json.loads(p.stdout.decode('utf8'))
@@ -261,8 +291,11 @@ def _realtime(manifest,contract,authority,engine,image,command,timeout):
     if not isinstance(command,list) or not command or any(not isinstance(x,str) or not x or '\x00' in x for x in command):raise PlatformRefused('realtime service command must be explicit argv')
     _authority(authority,'realtime',target,digest,{'engine':engine,'image':image,'command_sha256':hashlib.sha256(_canonical(command)).hexdigest(),'contract_sha256':hashlib.sha256(_canonical(contract)).hexdigest(),'protocol':contract['protocol'],'url':contract['url'],'timeout_seconds':timeout})
     if type(timeout)is not int or not 1<=timeout<=300:raise PlatformRefused('realtime timeout must be 1..300 seconds')
+    snapshot=_snapshot(root,manifest['files'],digest)
     try:info=application_service.preflight(engine,image)
-    except Exception as e:raise PlatformRefused('configured exact local Linux service image/engine unavailable: '+str(e)) from e
+    except Exception as e:
+        shutil.rmtree(snapshot,ignore_errors=True)
+        raise PlatformRefused('configured exact local Linux service image/engine unavailable: '+str(e)) from e
     name='autoforge-rt-'+uuid.uuid4().hex;cid=None;tunnel=None
     runenv=container_env.engine_env()
     def run(argv,seconds=15):
@@ -373,7 +406,7 @@ def _realtime(manifest,contract,authority,engine,image,command,timeout):
         try:return json.loads(payload.decode('utf8'))
         except (ValueError,UnicodeDecodeError):return payload.decode('utf8','replace')
     try:
-        cid=run([engine,'run','-d','--name',name,'--log-driver=json-file','--network=none','--read-only','--user=65534:65534','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=64','--memory=256m','--cpus=1','--mount',f'type=bind,src={root},dst=/candidate,readonly','--tmpfs','/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777','--workdir','/candidate','--entrypoint',command[0],image,*command[1:]]).decode().strip()
+        cid=run([engine,'run','-d','--name',name,'--log-driver=json-file','--network=none','--read-only','--user=65534:65534','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=64','--memory=256m','--cpus=1','--mount',f'type=bind,src={snapshot},dst=/candidate,readonly','--tmpfs','/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777','--workdir','/candidate','--entrypoint',command[0],image,*command[1:]]).decode().strip()
         if not re.fullmatch(r'[0-9a-f]{12,64}',cid):raise PlatformRefused('engine returned invalid isolated container ID')
         tunnel=container_http_tunnel.Tunnel(engine,cid,runenv);port=tunnel.port;deadline=time.monotonic()+min(timeout,30);ready=False
         while time.monotonic()<deadline:
@@ -441,6 +474,7 @@ def _realtime(manifest,contract,authority,engine,image,command,timeout):
             run([engine,'rm','-f',name],10)
             remaining=run([engine,'ps','-aq','--filter',f'name=^{name}$'],10).decode().strip()
             if remaining:raise PlatformRefused('owned realtime container name remains after cleanup')
+        shutil.rmtree(snapshot,ignore_errors=True)
 
 def main()->int:
     p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='kind',required=True)

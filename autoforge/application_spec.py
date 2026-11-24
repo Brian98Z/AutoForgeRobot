@@ -194,7 +194,7 @@ def validate_spec(candidate: Any, *, require_approved: bool = False) -> dict[str
 
 def propose_from_goal(goal: str, *, design_context: str = "", hidden_oracle_ids: list[str] | None = None, public_acceptance_ids: list[str] | None = None, on_event=None, review_feedback: str = "") -> dict[str, Any]:
     """Build a draft through bounded stages; only an operator can approve it."""
-    if not isinstance(goal,str) or not goal.strip(): _fail("goal must be nonempty text")
+    if not isinstance(goal,str) or not goal.strip() or len(goal.encode('utf-8'))>32768: _fail("goal must be nonempty text of at most 32768 UTF-8 bytes")
     if not isinstance(design_context,str) or len(design_context.encode('utf-8')) > 32768:
         _fail('design_context must be text of at most 32768 UTF-8 bytes')
     design_input = ("\nController engineering decisions (provenance=design only for details absent from the authoritative goal; repeated user obligations remain provenance=user, source=authoritative goal). These decisions resolve implementation choices unless they actually contradict the goal; do not ask for reapproval merely because the goal omitted that detail:\n"+design_context) if design_context else ""

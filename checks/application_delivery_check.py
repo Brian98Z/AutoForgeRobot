@@ -19,6 +19,18 @@ def main() -> None:
         evidence={'status':'PASS','candidate_sha256':manifest['candidate_sha256'],'validator':'independent-test-validator','scenarios':['exact digest check']}
         pack=base/'pack'; delivery.create_pack(candidate,evidence,{'lock_sha256':'a'*64,'dependencies':[]},{'engine':'local-adapter','image_digest':'sha256:'+'b'*64},pack)
         assert delivery.validate_pack(pack)['status']=='VALID'
+        try: delivery._read_regular(candidate)
+        except delivery.DeliveryRefused: pass
+        else: raise AssertionError('directory was read as a regular file')
+        if hasattr(__import__('os'),'symlink'):
+            link=base/'link-main.py'
+            try: link.symlink_to(candidate/'main.py')
+            except OSError: link=None
+            if link is not None:
+                try: delivery._read_regular(link)
+                except delivery.DeliveryRefused: pass
+                else: raise AssertionError('symlink was read as a regular file')
+                link.unlink()
         broken=base/'broken'; shutil.copytree(pack,broken); (broken/'evidence.json').write_text('{"status":"PASS"}',encoding='utf-8')
         try: delivery.validate_pack(broken)
         except delivery.DeliveryRefused: pass

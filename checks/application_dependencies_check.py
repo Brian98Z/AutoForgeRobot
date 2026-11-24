@@ -14,6 +14,13 @@ def main():
   except d.DependencyRefused:pass
   else:raise AssertionError('unauthorized acquisition allowed')
   rec=d.import_artifact(src,cache,sha,source_id='pypi-approved',license_record='MIT',package_name='demo',package_version='1.0',authorized=True)
+  for bad in ('yes',1):
+   try:d.import_artifact(src,cache,sha,source_id='pypi-approved',license_record='MIT',package_name='demo',package_version='1.0',authorized=bad)
+   except d.DependencyRefused:pass
+   else:raise AssertionError('non-boolean authorization was accepted')
+  try:d.import_artifact(src,cache,sha,source_id='pypi-approved',license_record='  ',package_name='demo',package_version='1.0',authorized=True)
+  except d.DependencyRefused:pass
+  else:raise AssertionError('blank license record was accepted')
   assert d.verify_cache(cache,[rec],expected_sources={'pypi-approved'})['artifacts'][0]['artifact_sha256']==sha
   lock={'schema':1,'ecosystem':'python','toolchain':{'name':'python','version':'3.12.1','container_image':'sha256:'+'a'*64},'packages':[{'name':'demo','version':'1.0','source':'pypi-approved','artifact_sha256':sha,'license':'MIT'}]}
   env=d.environment_manifest(lock,sources={'pypi-approved':'approved local artifact mirror'},artifacts=[rec],cache=cache)

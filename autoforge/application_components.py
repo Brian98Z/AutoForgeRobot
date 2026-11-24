@@ -57,7 +57,10 @@ class ComponentRuntime:
         self.authorized_hosts={h.lower() for h in (authorized_hosts or set())}
         self.network_authorized=network_authorized
         self.tls_context=tls_context
-        if self.tls_context is not None and not isinstance(self.tls_context,__import__('ssl').SSLContext):raise ComponentError('tls_context must be a verified SSLContext')
+        if self.tls_context is not None:
+            import ssl as _ssl
+            if not isinstance(self.tls_context,_ssl.SSLContext) or self.tls_context.verify_mode!=_ssl.CERT_REQUIRED or self.tls_context.check_hostname is not True:
+                raise ComponentError('tls_context must require certificate verification and hostname checks')
         self._init_db()
     def _connect(self):
         if _is_reparse(self.db) or _is_reparse(self.root) or _is_reparse(self.blobs):raise ComponentError('runtime storage path changed to reparse point')
@@ -125,12 +128,12 @@ class ComponentRuntime:
                 if prior:
                     if prior['operation']!='queue':raise ComponentError('idempotency key already used for another operation')
                     expected=json.loads(prior['request_digest'])
-                    if expected[:2]!=[body,max_attempts] or expected[2]!=now+delay:raise ComponentError('idempotency key reused with different queue parameters')
+                    if expected!=[body,max_attempts,delay]:raise ComponentError('idempotency key reused with different queue parameters')
                     return json.loads(prior['outcome'])
             if c.execute('SELECT COUNT(*) FROM queue').fetchone()[0]>=MAX_STORED_ROWS:raise ComponentError('queue capacity reached')
             result={'id':job_id,'state':'queued','attempts':0,'max_attempts':max_attempts,'available_at':now+delay}
             c.execute('INSERT INTO queue(id,payload,state,attempts,max_attempts,available,created) VALUES(?,?,?,0,?,?,?)',(job_id,body,'queued',max_attempts,now+delay,now))
-            if key:c.execute('INSERT INTO idempotency(key,operation,outcome,created,request_digest) VALUES(?,?,?,?,?)',(key,'queue',_json(result),now,_json([body,max_attempts,now+delay])))
+            if key:c.execute('INSERT INTO idempotency(key,operation,outcome,created,request_digest) VALUES(?,?,?,?,?)',(key,'queue',_json(result),now,_json([body,max_attempts,delay])))
         return result
     def claim(self,*,lease_seconds=60)->dict|None:
         if type(lease_seconds) not in (int,float) or not 1<=lease_seconds<=3600: raise ComponentError('lease must be 1..3600 seconds')
@@ -173,7 +176,8 @@ class ComponentRuntime:
         if type(when) not in (int,float) or not __import__('math').isfinite(when):raise ComponentError('scheduled time must be finite')
         with self._connect() as c:
             if c.execute('SELECT COUNT(*) FROM schedules').fetchone()[0]>=MAX_STORED_ROWS:raise ComponentError('schedule capacity reached')
-            c.execute('INSERT INTO schedules VALUES(?,?,?,?,1)',(sid,body,interval_seconds,when))
+            try:c.execute('INSERT INTO schedules VALUES(?,?,?,?,1)',(sid,body,interval_seconds,when))
+            except sqlite3.IntegrityError as exc:raise ComponentError('schedule id already exists') from exc
         return {'id':sid,'next_run':when,'interval_seconds':interval_seconds,'enabled':True}
 
     def search(self,query:str,*,limit=50)->list[dict]:
@@ -323,7 +327,8 @@ class ComponentRuntime:
         if len(encoded.encode())>MAX_CACHE_VALUE:raise ComponentError('record value exceeds 256 KiB')
         with self._connect() as c:
             if c.execute('SELECT COUNT(*) FROM records').fetchone()[0]>=MAX_STORED_ROWS:raise ComponentError('record capacity reached')
-            c.execute('INSERT INTO records VALUES(?,?,?)',(record_id,encoded,self.clock()))
+            try:c.execute('INSERT INTO records VALUES(?,?,?)',(record_id,encoded,self.clock()))
+            except sqlite3.IntegrityError as exc:raise ComponentError('record id already exists') from exc
         return {'id':record_id,'stored':True}
     def status(self)->dict:
         with self._connect() as c:

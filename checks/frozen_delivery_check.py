@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise a freshly built AutoForge executable's Windows spawn/SSE delivery path."""
+"""Exercise a freshly built AutoForge executable's spawn/SSE delivery path (Windows .exe or POSIX binary)."""
 from __future__ import annotations
 
 import argparse

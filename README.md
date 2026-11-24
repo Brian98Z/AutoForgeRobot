@@ -26,13 +26,13 @@ python autoforge/application_capabilities.py matrix
 
 ## Download
 
-Current release: `v0.1.1` — see [latest release](https://github.com/Brian98Z/AutoForgeRobot/releases/latest)
+Current release: `v0.1.2` — see [latest release](https://github.com/Brian98Z/AutoForgeRobot/releases/latest)
 and verify every file against the attached `SHA256SUMS.txt`. Packages are **unsigned**.
 
 | Platform | Single file | Folder |
 | --- | --- | --- |
-| Windows x64 | `autoforge-0.1.1-windows-x64.exe` | `...-windows-x64-onedir.zip` |
-| Linux x64 | `autoforge-0.1.1-linux-x64.tar.gz` | `...-linux-x64-onedir.tar.gz` |
+| Windows x64 | `autoforge-0.1.2-windows-x64.exe` | `...-windows-x64-onedir.zip` |
+| Linux x64 | `autoforge-0.1.2-linux-x64.tar.gz` | `...-linux-x64-onedir.tar.gz` |
 
 The single-file builds unpack their payload on every start; the onedir builds are extracted once and run
 without unpacking. GitHub's auto-generated Source code archives are not installers.
@@ -54,7 +54,7 @@ without unpacking. GitHub's auto-generated Source code archives are not installe
 ```bash
 python autoforge/build_exe.py                 # onefile -> dist/autoforge.exe
 python autoforge/build_exe.py --mode onedir   # onedir  -> dist-onedir/autoforge/
-python autoforge/package_release.py --platform windows --version 0.1.1
+python autoforge/package_release.py --platform windows --version 0.1.2
 ```
 
 PyInstaller cannot cross-compile; Linux packages are built inside a Python 3.11 image that also carries

@@ -13,6 +13,7 @@ import hashlib
 from typing import Any
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -21,6 +22,12 @@ from pathlib import Path
 ROOT = Path(os.environ.get("AUTOFORGE_ROOT") or
             ("/workspace/autoforge" if Path("/workspace/autoforge").is_dir() else "/opt/autoforge"))
 CHECKS = ROOT / "checks"
+# The benchmark check pins a repository manifest digest, not a local config ID; the suite
+# verifies the pinned image is present before running it.
+BENCHMARK_REPOSITORY = "public.ecr.aws/docker/library/python"
+BENCHMARK_DIGEST = "sha256:673719e071ecf27434fd2635bbd8d00f49f4fdd81f243143438a42ced8bedf60"
+PROVENANCE_DIR = Path("/workspace/provenance")
+RELEASE_DIR = Path("/workspace/release")
 
 
 def wait_ready(deadline_seconds: float = 60.0) -> None:
@@ -43,14 +50,19 @@ def run_one(path: Path, timeout: float, extra: list[str] | None = None,
     try:
         proc = subprocess.run(argv, cwd=str(ROOT), capture_output=True,
                               text=True, timeout=timeout, check=False, env=env)
-        code, out = proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+        code, stdout, stderr = proc.returncode, proc.stdout or "", proc.stderr or ""
     except subprocess.TimeoutExpired as exc:
-        code, out = -1, ((exc.stdout or "") + (exc.stderr or "")) if isinstance(exc.stdout, (str, bytes)) else "timeout"
-        if isinstance(out, bytes):
-            out = out.decode("utf-8", "replace")
-    lines = [line for line in out.strip().splitlines() if line.strip()]
+        code = -1
+        stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+        stderr = exc.stderr if isinstance(exc.stderr, str) else "timeout"
+    def verdict(stream: str) -> str:
+        # Separator and thread-traceback lines would otherwise hide the check's own verdict.
+        lines = [line for line in stream.strip().splitlines()
+                 if line.strip() and not re.fullmatch(r"-{3,}", line.strip())]
+        return lines[-1] if lines else ""
+    # Checks print their verdict to stdout; stderr is used only when stdout is empty.
     return {"check": path.stem, "rc": code, "seconds": round(time.monotonic() - started, 1),
-            "args": extra or [], "tail": (lines[-1] if lines else "")[:400]}
+            "args": extra or [], "tail": (verdict(stdout) or verdict(stderr))[:400]}
 
 
 def engine_image_id(reference: str) -> str | None:
@@ -73,12 +85,19 @@ CONTAINER_PROFILE = {
     "application_handoff_live_check": ["--image", "{image}"],
     "quality_resources_live_check": ["--engine", "docker", "--image", "{image}",
                                      "--output", "{fresh}/quality-resources.json"],
-    "benchmark_independent_check": ["--engine", "docker", "--image", "{image}",
+    "benchmark_independent_check": ["--engine", "docker", "--image", BENCHMARK_DIGEST,
                                     "--output", "{fresh}/benchmark"],
     # Default is 100 rounds; a bounded 12-round/4-segment run still exercises process-boundary
     # resume while staying inside the suite's per-check timeout.
     "endurance_check": ["--rounds", "12", "--segment", "4"],
     "agent_business_check": ["--image", "{image}"],
+    # Without these inputs the check only reports BLOCKED/NOT_TESTED while exiting 0.
+    "business_check": ["--engine", "docker", "--image", "{image}"],
+    # Live adapter needs the engine, the pinned image and an evidence path outside the workspace.
+    "application_platform_check": ["--live-realtime", "--engine", "docker", "--image", "{image}",
+                                   "--report", "{fresh}/platform.json"],
+    # Without a test DB the check only reports IMPLEMENTED_NOT_EXERCISED.
+    "application_database_check": ["--self-check-db", "{fresh}/self-check.db"],
     # The toolchain checks want exact local sha256 ids per ecosystem; resolve them from the
     # sidecar daemon at run time so a re-pulled tag does not silently point at a stale id.
     "application_frontend_live_check": ["--authorized", "--engine", "docker",
@@ -113,12 +132,16 @@ CONTAINER_PROFILE = {
     "stateful_reconstruction_adapter_check": ["--store", "{fresh}/store", "--engine", "docker",
                                              "--image", "{image}", "--node-image", "{node_image}"],
     # The driver default stops at 12 model calls, which this model reaches mid-iteration; the
-    # bounded 24-call/1M-token budget lets the loop finish instead of HOLDing on budget.
+    # bounded 48-call/6M-reservation budget lets the loop finish instead of HOLDing on budget.
     "stateful_reconstruction_check": ["--store", "{fresh}/store", "--candidate", "{fresh}/candidate.json",
                                       "--report", "{fresh}/report.json", "--engine", "docker",
                                       "--image", "{image}", "--node-image", "{node_image}",
-                                      "--max-turns", "24", "--token-budget", "1000000"],
+                                      "--max-turns", "48", "--token-budget", "6000000"],
 }
+
+# A converging 32-call live run can exceed the shared per-check timeout when the host model
+# runs on CPU-offloaded layers; the check keeps its own 1200 s model budget.
+CHECK_TIMEOUTS = {"stateful_reconstruction_check": 1300}
 
 # Checks listed above that need an extra image; the suite skips them when that image is absent
 # rather than failing on a placeholder.
@@ -173,11 +196,12 @@ def render(value: Any, **fields: str) -> Any:
     return value
 
 
-def prepare_state_volume(root: Path) -> list[str]:
+def prepare_state_volume(root: Path) -> tuple[list[str], str]:
     """Create the AutoForge-owned state volume the operations deploy expects.
 
     `ops.deploy` only inspects this volume and refuses one whose labels do not bind it to the
     exact deployment root, so the suite creates it with those labels and passes a matching run id.
+    The name is returned so a passing suite run can remove the disposable volume afterwards.
     """
     run_id = "state" + time.strftime("%Y%m%d%H%M%S")
     volume = "af-state-" + "".join(ch for ch in run_id if ch.isalnum())[:48]
@@ -186,7 +210,7 @@ def prepare_state_volume(root: Path) -> list[str]:
                     "--label", "io.omp.autoforge.owner=autoforge-application-operations-v1",
                     "--label", f"io.omp.autoforge.state-root={scope}", volume],
                    capture_output=True, text=True, check=False)
-    return ["--run-id", run_id]
+    return ["--run-id", run_id], volume
 
 
 def seed_shared_cache() -> None:
@@ -233,6 +257,48 @@ def cached_artifacts(cache: Path, name: str) -> list[dict]:
     return rows
 
 
+def extract_frozen(dest: Path) -> Path | None:
+    """Extract the newest Linux frozen release member for the frozen delivery check."""
+    import tarfile
+    for archive in sorted(RELEASE_DIR.glob("**/autoforge-*-linux-x64.tar.gz"), reverse=True):
+        try:
+            with tarfile.open(archive) as bundle:
+                member = next((item for item in bundle.getmembers()
+                               if item.isfile() and item.name.rsplit("/", 1)[-1].endswith("-linux-x64")), None)
+                if member is None:
+                    continue
+                dest.mkdir(parents=True, exist_ok=True)
+                target = dest / member.name.rsplit("/", 1)[-1]
+                source = bundle.extractfile(member)
+                if source is None:
+                    continue
+                with source, target.open("wb") as out:
+                    while chunk := source.read(1024 * 1024):
+                        out.write(chunk)
+            target.chmod(0o755)
+            return target
+        except (OSError, tarfile.TarError):
+            continue
+    return None
+
+
+def provenance_inputs() -> tuple[list[str], str] | None:
+    """Retained publisher evidence: artifact, detached signature, keyring and operator pin."""
+    pin = PROVENANCE_DIR / "pin.json"
+    artifact = PROVENANCE_DIR / "julia-1.13.3-linux-x86_64.tar.gz"
+    signature = artifact.with_name(artifact.name + ".asc")
+    keyring = PROVENANCE_DIR / "publisher-keyring.gpg"
+    if not (pin.is_file() and artifact.is_file() and signature.is_file() and keyring.is_file()):
+        return None
+    try:
+        fingerprint = json.loads(pin.read_text(encoding="utf-8")).get("fingerprint")
+    except (OSError, ValueError):
+        return None
+    if not isinstance(fingerprint, str) or not fingerprint:
+        return None
+    return ["--directory", str(PROVENANCE_DIR), "--fingerprint", fingerprint], fingerprint
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=None)
@@ -267,6 +333,7 @@ def main() -> int:
     for index, script in enumerate(scripts, 1):
         extra = None
         env_extra = None
+        state_volume = None
         if args.container_profile:
             missing = [reference for key, reference in PROFILE_REQUIREMENTS.get(script.stem, [])
                        if not toolchain_images.get(key)]
@@ -288,7 +355,8 @@ def main() -> int:
                 body = json.dumps(render(payload, image=image, fresh=str(fresh), **toolchain_images))
                 target.write_text(body + "\n", encoding="utf-8")
             if script.stem == "application_operations_state_live_check":
-                extra.extend(prepare_state_volume(fresh / "deploy"))
+                state_args, state_volume = prepare_state_volume(fresh / "deploy")
+                extra.extend(state_args)
             if script.stem == "toolchain_live_check":
                 seed_shared_cache()
                 artifacts = cached_artifacts(Path(SHARED_CACHE), "typescript")
@@ -303,7 +371,44 @@ def main() -> int:
                 env_extra = {key: value.format(image=image, fresh=str(fresh_root / script.stem),
                                                **toolchain_images)
                              for key, value in PROFILE_ENV[script.stem].items()}
-        row = run_one(script, args.timeout, extra, env_extra)
+            if script.stem == "benchmark_independent_check":
+                probe = subprocess.run(
+                    ["docker", "image", "inspect", f"{BENCHMARK_REPOSITORY}@{BENCHMARK_DIGEST}"],
+                    capture_output=True, text=True, check=False)
+                if probe.returncode:
+                    row = {"check": script.stem, "rc": 2, "seconds": 0.0, "args": [],
+                           "tail": f"skipped: pinned benchmark image absent; docker pull {BENCHMARK_REPOSITORY}@{BENCHMARK_DIGEST}"}
+                    rows.append(row)
+                    print(f"[{index}/{len(scripts)}] {row['check']} rc=2 0.0s {row['tail']}", flush=True)
+                    continue
+            if script.stem == "application_provenance_check":
+                evidence = provenance_inputs()
+                if evidence is None:
+                    row = {"check": script.stem, "rc": 2, "seconds": 0.0, "args": [],
+                           "tail": f"skipped: no retained publisher evidence in {PROVENANCE_DIR} (artifact, .asc, keyring, pin.json)"}
+                    rows.append(row)
+                    print(f"[{index}/{len(scripts)}] {row['check']} rc=2 0.0s {row['tail']}", flush=True)
+                    continue
+                extra = list(evidence[0])
+            if script.stem == "frozen_delivery_check":
+                frozen = extract_frozen(fresh_root / script.stem / "frozen")
+                if frozen is None:
+                    row = {"check": script.stem, "rc": 2, "seconds": 0.0, "args": [],
+                           "tail": f"skipped: no frozen Linux release archive in {RELEASE_DIR}"}
+                    rows.append(row)
+                    print(f"[{index}/{len(scripts)}] {row['check']} rc=2 0.0s {row['tail']}", flush=True)
+                    continue
+                extra = [str(frozen)]
+        row = run_one(script, CHECK_TIMEOUTS.get(script.stem, args.timeout), extra, env_extra)
+        if state_volume is not None:
+            row["state_volume"] = state_volume
+            if row["rc"] == 0:
+                # The check retains the volume for standalone operator review, but a passing
+                # suite run has already captured its report and backup, so the disposable
+                # database bytes must not accumulate as one volume per run.
+                removal = subprocess.run(["docker", "volume", "rm", state_volume],
+                                         capture_output=True, text=True, check=False)
+                row["state_volume_removed"] = removal.returncode == 0
         rows.append(row)
         print(f"[{index}/{len(scripts)}] {row['check']} rc={row['rc']} {row['seconds']}s "
               f"{row['tail'][:120]}", flush=True)

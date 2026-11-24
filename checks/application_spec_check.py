@@ -80,6 +80,7 @@ def check_controller_bound_goal():
         rejects(lambda: spec.validate_spec(changed), "design-context digest tampering")
         rejects(lambda: spec.propose_from_goal(goal, design_context=123), "nontext design context")
         rejects(lambda: spec.propose_from_goal(goal, design_context="中" * 10923), "oversized UTF-8 design context")
+        rejects(lambda: spec.propose_from_goal("中" * 10923, design_context=context), "oversized UTF-8 goal")
         for altered_ids in (["AC-OTHER"], ["AC-ADD", "AC-OTHER"], [], ["AC-ADD", "AC-ADD"], ["AC-ADD", None]):
             def altered(messages, tools, on_event=None, ids=altered_ids):
                 name = tools[0]["function"]["name"]

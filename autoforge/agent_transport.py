@@ -7,10 +7,11 @@ import os
 from typing import Any, Callable
 
 import application_proposer
+from agent_budget import MAX_OUTPUT_TOKENS
 
 Refused = application_proposer.Refused
 
-MAX_TOKENS = 4096
+MAX_TOKENS = MAX_OUTPUT_TOKENS
 def _object(value: Any, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise Refused(f"{label} must be an object")

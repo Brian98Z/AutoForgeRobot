@@ -42,6 +42,19 @@ def run(argv: list[str]) -> str:
     return lines[0] if lines else ""
 
 
+def controller_identity(path: Path) -> dict:
+    """The Rust controller has no --version; its `help` mode plus exact bytes identify it."""
+    identity = {"sha256": sha(path), "bytes": path.stat().st_size}
+    try:
+        out = subprocess.run([str(path), "help"], capture_output=True, text=True, timeout=60, check=False)
+        mode = json.loads(out.stdout).get("mode")
+        if isinstance(mode, str):
+            identity["mode"] = mode
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        pass
+    return identity
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path("/workspace/autoforge"))
@@ -73,7 +86,9 @@ def main() -> int:
             "python": sys.version.split()[0],
             "node": run(["node", "--version"]),
             "julia": run([str(args.root / "runtime/julia-1.13.3/bin/julia"), "--version"]),
-            "controller": run([str(args.root / "target/release/autoforge.exe"), "--version"]),
+            # `--version` is not a controller command; an empty version string was recorded
+            # before this, so the exact binary bytes and help mode now carry the identity.
+            "controller": controller_identity(args.root / "target/release/autoforge.exe"),
         },
         "suite": {"total": report.get("total"), "passed": report.get("passed"),
                   "failed": report.get("failed", [])},

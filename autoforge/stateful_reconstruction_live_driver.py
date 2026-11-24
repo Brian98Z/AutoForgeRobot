@@ -80,7 +80,7 @@ def main_from_args(args) -> int:
             raise SystemExit("HOLD: candidate, model-session, and report outputs must be absent")
         builder_argv=[sys.executable,str(MODULES/"stateful_reconstruction_adapter.py"),"--store",str(store.resolve()),"--package-id",package["package_id"],"--contract",str(bound_contract.resolve()),"--engine",args.engine,"--image",args.image,"--node-image",args.node_image]
         refs=applications._resolve_references(store,req["references"])
-        session=agent_runtime.run(req,refs,builder_argv,run_dir,args.max_turns,limits=agent_budget.Limits(model_calls=args.max_turns,tool_calls=96,tokens=args.token_budget,seconds=600),allowed_tools=["list_files","read_file","create_file","edit_file","search_files","read_reference","search_references","validate"])
+        session=agent_runtime.run(req,refs,builder_argv,run_dir,args.max_turns,limits=agent_budget.Limits(model_calls=args.max_turns,tool_calls=96,tokens=args.token_budget,seconds=1200),allowed_tools=["list_files","read_file","create_file","edit_file","search_files","read_reference","search_references","validate"])
         child_report=run_dir/"candidate.json"
         if session.get("status")!="PASS":
             raise SystemExit("HOLD: full persisted-state evaluator did not accept model candidate; session="+str(run_dir))

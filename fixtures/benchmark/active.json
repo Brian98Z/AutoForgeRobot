@@ -1,0 +1,63 @@
+{
+ "schema": 1,
+ "recorded_utc": "2026-11-24T08:10:47Z",
+ "candidates": {
+  "inventory-order-001": {
+   "path": "fixtures/benchmark/candidates/inventory-order-001.json",
+   "sha256": "76efbf7a01520c8ef9b96363cc805188f3298d32d37f36bb53360cbda85e2c84",
+   "source_run": "bootstrap-runs/benchmark-385d77098e304d0ab24acd06a84ea5fc",
+   "source_candidate_sha256": "76efbf7a01520c8ef9b96363cc805188f3298d32d37f36bb53360cbda85e2c84"
+  },
+  "ticket-status-001": {
+   "path": "fixtures/benchmark/candidates/ticket-status-001.json",
+   "sha256": "09f7f6ac52cfce522858d0a353327631d3fdc01957799e7994e783da75632c8b",
+   "source_run": "bootstrap-runs/benchmark-385d77098e304d0ab24acd06a84ea5fc",
+   "source_candidate_sha256": "09f7f6ac52cfce522858d0a353327631d3fdc01957799e7994e783da75632c8b"
+  },
+  "order-validation-001": {
+   "path": "fixtures/benchmark/candidates/order-validation-001.json",
+   "sha256": "77aab2de0d8ba9a95aa3fe981e5ff877395ce8e357d8016f891c53d3f25f54fe",
+   "source_run": "bootstrap-runs/benchmark-cd8e91ec9d95406da53c5f29fd74c33a",
+   "source_candidate_sha256": "77aab2de0d8ba9a95aa3fe981e5ff877395ce8e357d8016f891c53d3f25f54fe"
+  },
+  "content-render-001": {
+   "path": "fixtures/benchmark/candidates/content-render-001.json",
+   "sha256": "fe88e7b70c16fccfcd2fe326df6c6b56ae8a3700ebf26f7c1d56f9f8c7a23f20",
+   "source_run": "bootstrap-runs/benchmark-cd8e91ec9d95406da53c5f29fd74c33a",
+   "source_candidate_sha256": "fe88e7b70c16fccfcd2fe326df6c6b56ae8a3700ebf26f7c1d56f9f8c7a23f20"
+  }
+ },
+ "registration": {
+  "plan": "bootstrap-runs/benchmark-registration-20261124/preregistration.json",
+  "plan_sha256": "3b6ca2dc1297363861ac0108351c2c01cbf7b11c1a867079bdf051518e878fec",
+  "amendments": [
+   {
+    "path": "bootstrap-runs/benchmark-registration-20261124/amendment-1.json",
+    "sha256": "74a6aa546e538968ac3bdaeff5bcff133f798dd338e0c2b289d87c86070d8e5d"
+   },
+   {
+    "path": "bootstrap-runs/benchmark-registration-20261124/amendment-2.json",
+    "sha256": "266406eb321f9fa9b9792b3341323e2b4ac40321669f3072af1444c6d399a8b3"
+   },
+   {
+    "path": "bootstrap-runs/benchmark-registration-20261124/amendment-3.json",
+    "sha256": "7a550fd7ee4b846627bd86404f44747f19d726971c29942db89b80cdc58e4900"
+   }
+  ],
+  "goal_suffix": "bootstrap-runs/benchmark-registration-20261124/goal-suffix-round4.txt",
+  "goal_suffix_sha256": "d48e30c3d445afb1a2a603c60abfc98635b9006eca5f5b3555157021b0d6ea15",
+  "model_profile": "quality",
+  "model_id": "H:\\ComfyUI_Mie_2026_V8.0\\ComfyUI\\models\\LLM\\Qwen3.6-35B-A3B\\Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ4_NL.gguf"
+ },
+ "acceptance": {
+  "check": "checks/benchmark_independent_check.py",
+  "seed": 21104,
+  "cases_per_task": 80,
+  "repetitions": 1,
+  "report": "bootstrap-runs/benchmark-regeneration-eval-round4-20261124/independent-comparison.json",
+  "report_sha256": "211d9b6be32b93584dc73247f347fe6b99136660def71875c6d30256c9b12d56",
+  "status": "PASS",
+  "rule": "all four task rows PASS on the same round candidate set; earliest passing round activated"
+ },
+ "note": "Activated set from the pre-registered regeneration. Historical defaults in the check remain unchanged as fallback."
+}

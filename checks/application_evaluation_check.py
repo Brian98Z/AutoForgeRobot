@@ -43,6 +43,10 @@ def main():
     refused=E.execute_lane(manifest,"proposal",timeout_seconds=3,adapter_authorized=False); assert refused["status"]=="REFUSED"
     held=E.execute_lane(manifest,"proposal",timeout_seconds=3,adapter_authorized=True); assert held["status"]=="HOLD"
     held=E.execute_lane(manifest,"proposal",timeout_seconds=3,adapter_authorized=True,container_report={"expected_report_sha256":sha("container")}); assert held["status"]=="HOLD" and held["reason"]=="adapter result envelope invalid or context mismatch"
+    for bad_lanes in ({**manifest['lanes'],'proposal':['not-a-dict']},{**manifest['lanes'],'replay':{'argv':['x\x00y'],'argv_sha256':'0'*64}}):
+        try: E.execute_lane({**manifest,'lanes':bad_lanes},'proposal',timeout_seconds=3,adapter_authorized=True,container_report={'expected_report_sha256':sha('container')})
+        except E.EvaluationRefused: pass
+        else: raise AssertionError('malformed lane manifest was accepted or crashed')
     replay={"task_id":"a","task_sha256":sha("task"),"reference_sha256":sha("ref"),"budgets":{"seconds":5},"tool_sha256":sha("tool"),"acceptance_sha256":sha("accept"),**ev("PASS","replayer","model-b","oracle-b")}
     proposal={**replay,"producer_id":"proposer","model_id":"model-a","oracle_id":"oracle-a","evidence_sha256":sha("proposal")}
     assert E.reconcile_lanes(proposal,replay)["outcome"]=="PASS"

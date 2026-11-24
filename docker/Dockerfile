@@ -11,10 +11,21 @@ ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup \
     PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# A pinned mirror is not an availability guarantee: aliyun intermittently fails single
+# package fetches (observed on gcc-14-x86-64-linux-gnu), so try the preferred mirror and
+# fall back to the upstream archive before failing the layer.
 RUN set -eux; \
-    sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends curl ca-certificates build-essential; \
+    installed=0; \
+    for mirror in mirrors.aliyun.com deb.debian.org; do \
+        sed -i -e "s|deb.debian.org|$mirror|g" -e "s|mirrors.aliyun.com|$mirror|g" \
+            /etc/apt/sources.list.d/debian.sources; \
+        if apt-get -o Acquire::Retries=5 update \
+           && apt-get install -y --no-install-recommends curl ca-certificates build-essential; then \
+            installed=1; break; \
+        fi; \
+        rm -rf /var/lib/apt/lists/*; \
+    done; \
+    [ "$installed" = 1 ]; \
     rm -rf /var/lib/apt/lists/*; \
     curl -fsSL -o /tmp/rustup-init \
       https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup/dist/x86_64-unknown-linux-gnu/rustup-init; \
@@ -29,9 +40,17 @@ RUN cargo build --release --locked
 # Julia runtime for the provider lanes (bootstrap/iterate/protocol parity).
 FROM public.ecr.aws/docker/library/python:3.11-slim AS juliabuild
 RUN set -eux; \
-    sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends curl ca-certificates xz-utils; \
+    installed=0; \
+    for mirror in mirrors.aliyun.com deb.debian.org; do \
+        sed -i -e "s|deb.debian.org|$mirror|g" -e "s|mirrors.aliyun.com|$mirror|g" \
+            /etc/apt/sources.list.d/debian.sources; \
+        if apt-get -o Acquire::Retries=5 update \
+           && apt-get install -y --no-install-recommends curl ca-certificates xz-utils; then \
+            installed=1; break; \
+        fi; \
+        rm -rf /var/lib/apt/lists/*; \
+    done; \
+    [ "$installed" = 1 ]; \
     rm -rf /var/lib/apt/lists/*; \
     curl -fsSL -o /tmp/julia.tar.gz \
       https://mirrors.tuna.tsinghua.edu.cn/julia-releases/bin/linux/x64/1.13/julia-1.13.3-linux-x86_64.tar.gz; \
@@ -51,18 +70,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/opt/autoforge/autoforge:/opt/autoforge
 
-# deb.debian.org intermittently serves broken index files here; the aliyun mirror answers in ms.
-RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources
-
+# Keep the mirror preference in one place: each install tries aliyun first and falls back
+# to the upstream archive, never treating one mirror as guaranteed. deb.debian.org sometimes
+# serves broken index files from this network, aliyun sometimes drops a single package.
 RUN set -eux; \
-    for attempt in 1 2 3; do \
+    installed=0; \
+    for mirror in mirrors.aliyun.com deb.debian.org; do \
+        sed -i -e "s|deb.debian.org|$mirror|g" -e "s|mirrors.aliyun.com|$mirror|g" \
+            /etc/apt/sources.list.d/debian.sources; \
         if apt-get -o Acquire::Retries=5 update \
-           && apt-get install -y --no-install-recommends ca-certificates socat nodejs; then \
-            break; \
+           && apt-get install -y --no-install-recommends ca-certificates socat nodejs gnupg gpgv; then \
+            installed=1; break; \
         fi; \
-        [ "$attempt" = 3 ] && exit 1; \
-        sleep 5; \
+        rm -rf /var/lib/apt/lists/*; \
     done; \
+    [ "$installed" = 1 ]; \
     rm -rf /var/lib/apt/lists/*
 
 # Client for the sidecar Docker daemon (candidate execution happens there, never on this image).
@@ -106,6 +128,9 @@ COPY providers /opt/autoforge/providers
 # stateful-operations checks; small and required for those checks to run at all.
 COPY bootstrap-runs/frontend-framework-20261104 /opt/autoforge/bootstrap-runs/frontend-framework-20261104
 COPY bootstrap-runs/generated-web-extended-ce8932caad84 /opt/autoforge/bootstrap-runs/generated-web-extended-ce8932caad84
+# The benchmark check replays these four historical immutable candidates verbatim.
+COPY bootstrap-runs/benchmark-9f1b8e4eab92456283dd9473196b2268 /opt/autoforge/bootstrap-runs/benchmark-9f1b8e4eab92456283dd9473196b2268
+COPY bootstrap-runs/benchmark-302a806172364ac8a5245c5a052ca1bf /opt/autoforge/bootstrap-runs/benchmark-302a806172364ac8a5245c5a052ca1bf
 COPY Cargo.toml Cargo.lock /opt/autoforge/
 
 # Controller drivers resolve the release binary by its Windows name; a real copy there keeps

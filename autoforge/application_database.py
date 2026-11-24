@@ -148,7 +148,7 @@ def postgres_migrate(handle:dict[str,Any],migration_sql:str,*,expected_version:i
     if not isinstance(handle,dict) or handle.get('status')!='READY' or not all(isinstance(handle.get(k),str) and handle[k] for k in ('engine','container','username','database')):raise DatabaseFailure('invalid PostgreSQL lifecycle handle')
     if type(timeout)is not int or not 3<=timeout<=180:raise DatabaseFailure('invalid migration timeout')
     if not isinstance(migration_sql,str) or not migration_sql.strip() or len(migration_sql.encode())>262144:raise DatabaseFailure('bounded migration SQL required')
-    if any(line.lstrip().startswith('\\') for line in migration_sql.splitlines()) or re.search(r'(?im)^\s*(?:BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE)\b',migration_sql):raise DatabaseFailure('transaction control and psql meta-commands forbidden')
+    if any(line.lstrip().startswith('\\') for line in migration_sql.splitlines()) or re.search(r'(?im)^\s*END\b',migration_sql) or re.search(r'(?i)\b(?:BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b',migration_sql):raise DatabaseFailure('transaction control and psql meta-commands forbidden')
     script=("BEGIN;\nSELECT pg_advisory_xact_lock(1096111183);\n"
             "CREATE TABLE IF NOT EXISTS public.autoforge_schema_version (singleton boolean PRIMARY KEY CHECK(singleton), version integer NOT NULL);\n"
             "INSERT INTO public.autoforge_schema_version VALUES(true,0) ON CONFLICT DO NOTHING;\n"
@@ -169,7 +169,7 @@ def postgres_accept(engine:str,handle:dict[str,Any],migration_sql:str,rollback_s
         if code and not ok_fail: raise DatabaseFailure('PostgreSQL operation failed: '+err[:2048].decode('utf-8','replace'))
         return (out+err)[:65536].decode('utf-8','replace')
     if not isinstance(migration_sql,str) or not migration_sql.strip() or len(migration_sql.encode())>262144 or not isinstance(rollback_sql,str) or not rollback_sql.strip() or len(rollback_sql.encode())>262144: raise DatabaseFailure('bounded migration and rollback SQL are required')
-    if any(line.lstrip().startswith('\\') for line in migration_sql.splitlines()+rollback_sql.splitlines()) or re.search(r'(?im)^\s*(?:BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE)\b',migration_sql+'\n'+rollback_sql): raise DatabaseFailure('transaction control and psql meta-commands forbidden in migration scripts')
+    if any(line.lstrip().startswith('\\') for line in migration_sql.splitlines()+rollback_sql.splitlines()) or re.search(r'(?im)^\s*END\b',migration_sql+'\n'+rollback_sql) or re.search(r'(?i)\b(?:BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b',migration_sql+'\n'+rollback_sql): raise DatabaseFailure('transaction control and psql meta-commands forbidden in migration scripts')
     backup_code,pre_migration_backup,backup_err=_bounded_command([engine,'exec','-e','PGPASSWORD='+password,cid,'pg_dump','-Fc','-U',user,'-d',database],timeout=timeout,limit=16777216)
     if backup_code: raise DatabaseFailure('pre-migration pg_dump failed: '+backup_err[:2048].decode('utf-8','replace'))
     try: psql('BEGIN;\n'+migration_sql+'\nCOMMIT;')

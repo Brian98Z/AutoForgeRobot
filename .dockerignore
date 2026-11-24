@@ -17,3 +17,5 @@
 !bootstrap-runs/generated-web-extended-ce8932caad84/**
 **/__pycache__
 **/*.pyc
+!bootstrap-runs/benchmark-9f1b8e4eab92456283dd9473196b2268/**
+!bootstrap-runs/benchmark-302a806172364ac8a5245c5a052ca1bf/**

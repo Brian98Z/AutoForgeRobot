@@ -49,6 +49,12 @@ def main() -> int:
             raise AssertionError("status accepted tampered active revision payload")
         active_main.write_bytes(saved_payload)
         checks.append("active revision payload tampering refused")
+        pointer_path = out / "active.json"; pointer = json.loads(pointer_path.read_text())
+        pointer["schema"] = True; pointer_path.write_text(json.dumps(pointer))
+        try: project._pointer(out)
+        except project.ProjectRefused: pass
+        else: raise AssertionError("boolean pointer schema accepted")
+        pointer["schema"] = 1; pointer_path.write_text(json.dumps(pointer))
         checks.append("schema-1 import, exact digests, user-file preservation, diff and immutable active revision")
         (source / "unrelated.txt").write_text("new user work\n", encoding="utf-8")
         try:

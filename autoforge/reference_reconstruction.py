@@ -2,7 +2,7 @@
 """Isolated JSON-lines behavioral comparison against an operator-authored licensed reference contract."""
 from __future__ import annotations
 import argparse, hashlib, json, math, os, stat, tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import references
 import application_builder
 import container_env
@@ -20,6 +20,16 @@ def _regular_chain(path: Path) -> Path:
             raise ReconstructionHold("path contains symlink or reparse point")
     return absolute
 
+def _safe_reference_path(rel: str) -> str:
+    """Validate a POSIX source path before any filesystem join."""
+    if not isinstance(rel,str) or not rel:
+        raise ReconstructionHold("reference file path must be nonempty text")
+    pure=PurePosixPath(rel)
+    if pure.is_absolute() or pure.as_posix()!=rel or any(part in {"", ".", ".."} for part in pure.parts):
+        raise ReconstructionHold("reference file path is unsafe")
+    return rel
+
+
 def _snapshot_candidate(source: Path, destination: Path) -> list[dict]:
     manifest = source / "manifest.json"
     if manifest.exists():
@@ -29,9 +39,10 @@ def _snapshot_candidate(source: Path, destination: Path) -> list[dict]:
         if not isinstance(raw, dict) or not {"files", "workspace", "candidate_sha256"} <= set(raw) or Path(raw["workspace"]).resolve() != source.resolve():
             raise ReconstructionHold("staged candidate manifest does not bind this workspace")
         if not isinstance(raw["files"],list) or any(not isinstance(item,dict) or set(item)!={"path","size","sha256"} for item in raw["files"]): raise ReconstructionHold("staged candidate manifest file records are invalid")
-        listed = {item["path"]: item for item in raw["files"]}
+        listed = {_safe_reference_path(item["path"]): item for item in raw["files"]}
         if len(listed)!=len(raw["files"]): raise ReconstructionHold("staged candidate manifest contains duplicate paths")
         actual = {p.relative_to(source).as_posix() for p in source.rglob("*") if p.is_file() and p.name != "manifest.json"}
+        if set(listed)!=actual: raise ReconstructionHold("staged candidate manifest must list exactly the present files")
         try:
             canonical={"schema":1,"goal":raw.get("goal"),"references":raw.get("references"),"files":[{"path":item["path"],"size":item["size"],"sha256":item["sha256"]} for item in raw["files"]]}
             computed=_sha(_canon(canonical))
@@ -81,7 +92,8 @@ def evaluate(store, package_id, candidate, contract_path, *, engine, image):
                 if files is not None:
                     snapshot=[]
                     for rel,row in files.items():
-                        target=work.joinpath(*Path(rel).parts);target.parent.mkdir(parents=True,exist_ok=True);data=row["content"].encode("utf-8");target.write_bytes(data)
+                        _safe_reference_path(rel)
+                        target=work.joinpath(*PurePosixPath(rel).parts);target.parent.mkdir(parents=True,exist_ok=True);data=row["content"].encode("utf-8");target.write_bytes(data)
                         snapshot.append({"path":rel,"sha256":row["sha256"],"size":len(data)})
                 else:
                     snapshot=_snapshot_candidate(candidate_root,work)

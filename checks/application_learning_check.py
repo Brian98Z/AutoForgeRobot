@@ -49,6 +49,10 @@ def main():
         result=L.retrieve_experiences(root/"experiences",reference_store=root/"ref",problem_tags=["validation"],environment=base["environment"]); assert len(result)==1 and result[0]["sha256"]==record["sha256"]
         assert L.retrieve_experiences(root/"experiences",reference_store=root/"ref",problem_tags=["validation"],environment={"runtime":"python-3.12"})==[]
         fake={**base,"validator":{**base["validator"],"report_sha256":"3"*64,"validator_id":"model said so"}}; reject(lambda:L.record_experience(fake,root/"ref"))
+        nonind=json.loads(json.dumps(record)); nonind.pop("sha256"); nonind["validator"]["independent"]=False; reject(lambda:L.record_experience(nonind,root/"ref"))
+        badsha=json.loads(json.dumps(record)); badsha.pop("sha256"); badsha["validator"]["report_sha256"]="9"*64; reject(lambda:L.record_experience(badsha,root/"ref"))
+        (root/"experiences"/"not-object.json").write_text("[1]\n",encoding="utf-8"); reject(lambda:L.retrieve_experiences(root/"experiences",reference_store=root/"ref",problem_tags=["validation"],environment=base["environment"]))
+        (root/"experiences"/"not-object.json").unlink()
         badrecord=json.loads((root/"experiences"/"repair-1.json").read_text()); badrecord["repair_summary"]="tamper"; (root/"experiences"/"repair-1.json").write_text(json.dumps(badrecord)); reject(lambda:L.retrieve_experiences(root/"experiences",reference_store=root/"ref",problem_tags=["validation"],environment=base["environment"]))
     print("application_learning_check: PASS (verified refs, provenance, validator-bound immutable experience, deterministic environment retrieval, tamper refusal)")
 if __name__=="__main__": main()

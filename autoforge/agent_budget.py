@@ -7,6 +7,9 @@ import math
 import time
 
 
+MAX_OUTPUT_TOKENS = 8192
+
+
 class Exhausted(ValueError):
     pass
 
@@ -20,7 +23,7 @@ class Limits:
     cost_microunits: int = 0
     input_microunits_per_million: int = 0
     output_microunits_per_million: int = 0
-    output_tokens: int = 4096
+    output_tokens: int = MAX_OUTPUT_TOKENS
     repeated_failures: int = 3
 
     def __post_init__(self):
@@ -30,7 +33,7 @@ class Limits:
                     raise ValueError('seconds must be finite and positive')
             elif type(value) is not int or value < (0 if 'microunits' in name else 1):
                 raise ValueError(f'invalid budget field: {name}')
-        if self.output_tokens > 4096 or self.model_calls > 1000 or self.tool_calls > 10000:
+        if self.output_tokens > MAX_OUTPUT_TOKENS or self.model_calls > 1000 or self.tool_calls > 10000:
             raise ValueError('budget exceeds controller limits')
 
 

@@ -24,7 +24,7 @@ MODULES = ROOT / "autoforge"
 FIXTURE = ROOT / "fixtures" / "business"
 MAX_SECONDS = 480
 MAX_CALLS = 16
-OUTPUT_TOKENS = 4096
+OUTPUT_TOKENS = 8192
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 def _events(path: Path) -> list[dict]:

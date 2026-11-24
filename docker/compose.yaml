@@ -36,8 +36,7 @@ services:
       AUTOFORGE_API_BASE: http://127.0.0.1:8081/v1
       AUTOFORGE_API_KEY: ""
       AUTOFORGE_TOOL_CHOICE: auto
-      # Must equal an id listed by the served /v1/models endpoint.
-      AUTOFORGE_MODEL: '${AUTOFORGE_MODEL_ID:-local-model}'
+      AUTOFORGE_MODEL: 'H:\ComfyUI_Mie_2026_V8.0\ComfyUI\models\LLM\Qwen3.6-35B-A3B\Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ4_NL.gguf'
       AUTOFORGE_ENGINE_IMAGE: public.ecr.aws/docker/library/python:3.11-slim
       AUTOFORGE_RUNS: /workspace/runs
       AUTOFORGE_CYCLES: "3"
@@ -48,6 +47,11 @@ services:
     working_dir: /workspace/autoforge
     volumes:
       - work:/workspace
+      # Inputs the suite consumes but does not copy into the image: the frozen release
+      # packages (for the POSIX delivery check) and the retained Julia publisher evidence
+      # (artifact + detached signature + keyring + operator pin).
+      - ../release:/workspace/release:ro
+      - ../bootstrap-runs/provenance-julia-1.13.3-20261124:/workspace/provenance:ro
     # Keep-alive workbench: drive cycles with `docker compose exec autoforge ...`
     # (iterate.py stays available for an explicit autonomous run).
     command: ["sleep", "infinity"]

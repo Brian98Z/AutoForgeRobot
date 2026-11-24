@@ -73,7 +73,7 @@ def _container_with_resources(engine:str,image:str,root:Path,payload:bytes,timeo
         if metrics_proc.returncode!=0:raise ResourceProbeUnavailable('controller could not read cgroup-v2 resource counters')
         try:metrics=json.loads(metrics_proc.stdout)
         except (ValueError,UnicodeError) as exc:raise ResourceProbeUnavailable('malformed controller cgroup metrics') from exc
-        if not isinstance(metrics,dict) or set(metrics)!={'schema','peak_memory_bytes','cpu_usage_usec','user_cpu_usec','system_cpu_usec'} or metrics['schema']!=1 or any(type(metrics[k]) is not int or metrics[k]<0 for k in ('peak_memory_bytes','cpu_usage_usec')):
+        if not isinstance(metrics,dict) or set(metrics)!={'schema','peak_memory_bytes','cpu_usage_usec','user_cpu_usec','system_cpu_usec'} or metrics['schema']!=1 or any(type(metrics[k]) is not int or metrics[k]<0 for k in ('peak_memory_bytes','cpu_usage_usec','user_cpu_usec','system_cpu_usec')):
             raise ResourceProbeUnavailable('invalid controller cgroup counters')
         return candidate.stdout,candidate.stderr,candidate.returncode,False,{**metrics,'source':'trusted engine exec reading cgroup-v2 memory.peak and cpu.stat; includes idle init and measurement commands'}
     finally:

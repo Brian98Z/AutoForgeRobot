@@ -33,6 +33,22 @@ def main():
     refused(lambda: over.record_usage({'prompt_tokens': res['input_token_bound'] + 1, 'completion_tokens': 0, 'total_tokens': res['input_token_bound'] + 1}, res), 'provider_exceeded_reservation')
     expired = b.Budget(limits, {**budget.snapshot(), 'elapsed_seconds': limits.seconds})
     refused(expired.reserve_tool, 'wall_time_budget')
+    assert b.Limits().output_tokens == b.MAX_OUTPUT_TOKENS == 8192
+    assert b.Budget(b.Limits()).reserve_model(messages, [])['output_token_limit'] == 8192
+    try:
+        b.Limits(output_tokens=b.MAX_OUTPUT_TOKENS + 1)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('output token ceiling was not enforced')
+    import agent_transport
+    assert agent_transport.MAX_TOKENS == b.MAX_OUTPUT_TOKENS
+    try:
+        agent_transport.complete(messages, [], max_tokens=b.MAX_OUTPUT_TOKENS + 1)
+    except agent_transport.Refused:
+        pass
+    else:
+        raise AssertionError('transport accepted an output limit above the ceiling')
     print(json.dumps({'status': 'PASS', 'scope': 'conservative resource reservations and checkpoint preservation; not billing proof'}))
 if __name__ == '__main__':
     main()

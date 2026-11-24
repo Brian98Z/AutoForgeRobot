@@ -61,6 +61,14 @@ def main():
   except auth.AuthRefused:pass
   else:raise AssertionError('expired session accepted')
   assert auth.redact_auth_fields({'Authorization':'Bearer secret','nested':{'password':'x'}})=={'Authorization':'[REDACTED]','nested':{'password':'[REDACTED]'}}
+  assert auth.redact_auth_fields({'access_token':'a','refresh_token':'b','client_secret':'c'})=={'access_token':'[REDACTED]','refresh_token':'[REDACTED]','client_secret':'[REDACTED]'}
+  try:auth.hash_password('correct horse battery staple',salt='x'*16)
+  except auth.AuthRefused:pass
+  else:raise AssertionError('non-bytes salt accepted')
+  bad=Path(td)/'bad-sessions.json';bad.write_text(json.dumps({'schema':1,'state':[],'sha256':'0'*64}),encoding='utf-8')
+  try:auth.SessionStore(bad).authenticate('token')
+  except auth.AuthRefused:pass
+  else:raise AssertionError('malformed session store accepted or crashed')
   http_check(store,now)
   print(json.dumps({'status':'PASS','checks':['password hashing','opaque hashed session storage','expiry','revocation','role enforcement','tenant isolation','redaction'],'http_integration':{'status':'PASS','cases':{'authorized':200,'unauthenticated':401,'role_denied':403,'cross_tenant':403,'revoked':401,'expired_at_boundary':401},'scope':'authored loopback handler using real SessionStore; not generated application or container secret injection'}}))
   import os, application_secrets as secrets_api
@@ -69,7 +77,11 @@ def main():
    mount=Path(manifest['mounts'][0]['source'])
    assert manifest['values_exposed'] is False
    if os.name!='nt':assert mount.stat().st_mode & 0o777 == 0o600 and mount.parent.stat().st_mode & 0o777 == 0o700
-   config=secrets_api.resolve_secret_files({'token':{'$secret_file':manifest['mounts'][0]['target']},'port':8080},mounted_root=mount.parent)
+   config=secrets_api.resolve_secret_files({'token':{'$secret_file':manifest['mounts'][0]['target']},'port':8080},mounted_root=mount.parent,manifest=manifest)
+   bad_manifest={**manifest,'mounts':[{**manifest['mounts'][0],'sha256':'0'*64}]}
+   try:secrets_api.resolve_secret_files({'token':{'$secret_file':manifest['mounts'][0]['target']}},mounted_root=mount.parent,manifest=bad_manifest)
+   except secrets_api.SecretInjectionRefused:pass
+   else:raise AssertionError('secret digest mismatch accepted')
    assert config=={'token':'operator-secret','port':8080} and 'operator-secret' not in json.dumps(manifest)
    try:secrets_api.resolve_secret_files({'token':{'$secret_file':'/etc/passwd'}},mounted_root=mount.parent)
    except secrets_api.SecretInjectionRefused:pass

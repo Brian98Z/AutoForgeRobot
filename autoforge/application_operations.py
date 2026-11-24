@@ -27,6 +27,18 @@ def _run(engine:str,args:list[str],timeout:int=20)->str:
     if r.returncode: raise OperationsRefused(f'container engine command failed ({args[0]}): {r.stderr[:1000].decode("utf-8","replace")}')
     return r.stdout.decode('utf-8','replace').strip()
 
+def remove_runtime(engine:str,container_id:str)->bool:
+    """Remove one exact container only when it carries this module's ownership label.
+
+    Verification containers and disposable test revisions are removed through here so a
+    failed check never leaves a running `af-release-*` behind. Unknown ownership is kept.
+    """
+    try:labels=json.loads(_run(engine,['inspect','--format','{{json .Config.Labels}}',container_id]))
+    except Exception:return False
+    if labels.get(LABEL)!=OWNER:return False
+    try:_run(engine,['rm','-f',container_id]);return True
+    except Exception:return False
+
 def _run_named_database_helper(engine:str,name:str,argv:list[str],result:dict[str,Any])->dict[str,Any]:
     state=''
     try:
@@ -318,11 +330,7 @@ def deploy(pack:Path,root:Path,*,authorization:dict[str,Any],request_id:str,imag
             return {'status':phase.upper(),'revision':rev,'container_id':cid,'measurements':evidence,'resources':resources,'database':database_result,'data_rollback':'not_claimed'}
         except BaseException as exc:
             if tunnel is not None:tunnel.close()
-            if cid and not keep_container:
-                try:
-                    own=json.loads(_run(engine,['inspect','--format','{{json .Config.Labels}}',cid])).get(LABEL)==OWNER
-                    if own:_run(engine,['rm','-f',cid])
-                except Exception:pass
+            if cid and not keep_container:remove_runtime(engine,cid)
             if secret_manifest:
                 try:secrets_module.cleanup_runtime_secrets(secret_manifest,audit_path=root/'secret-cleanup.jsonl')
                 except Exception:pass
@@ -442,12 +450,13 @@ def transition(root:Path,*,authorization:dict[str,Any],image_id:str,engine:str,a
             return {'status':'PROMOTED' if action=='promote' else 'ROLLED_BACK','revision':revision,'health_probe':proof,'data_rollback':'not_claimed'}
         except BaseException as exc:
             try:
-                if checkcid:
-                    labels=json.loads(_run(engine,['inspect','--format','{{json .Config.Labels}}',checkcid]))
-                    if labels.get(LABEL)==OWNER:_run(engine,['rm','-f',checkcid])
                 rec=delivery._load(ledger/(request_id+'.json'));rec.update({'state':'unknown','status':'STOPPED_OR_FAILED','error_type':type(exc).__name__,'updated_at':time.time()});delivery._write_json(ledger/(request_id+'.json'),rec)
             except Exception:pass
             raise
+        finally:
+            # The health-check container is disposable: it exists only to probe the target
+            # revision, so the successful pointer switch must not leave it running either.
+            if checkcid:remove_runtime(engine,checkcid)
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__); s=p.add_subparsers(dest='cmd',required=True)
     q=s.add_parser('deploy');q.add_argument('pack',type=Path);q.add_argument('root',type=Path);q.add_argument('authorization',type=Path);q.add_argument('contract',type=Path);q.add_argument('config',type=Path);q.add_argument('--request-id',required=True);q.add_argument('--image-id',required=True);q.add_argument('--engine',choices=('docker',),required=True);q.add_argument('--command-json',required=True);q.add_argument('--phase',choices=('shadow','canary'),default='shadow');q.add_argument('--stop-file',type=Path);q.add_argument('--fault-after',type=int)

@@ -16,6 +16,38 @@ class DeliveryRefused(ValueError): pass
 
 def _json(value: Any) -> bytes: return checkpoint.canonical(value)
 def _sha(data: bytes) -> str: return checkpoint.digest(data)
+
+
+MAX_FILE_BYTES = 64 * 1024 * 1024
+MAX_TOTAL_BYTES = 256 * 1024 * 1024
+
+
+def _read_regular(path: Path, limit: int = MAX_FILE_BYTES) -> bytes:
+    """Read one regular file through a single descriptor, refusing links and special files."""
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise DeliveryRefused(f'file unavailable: {exc}') from exc
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise DeliveryRefused('file is not a regular file')
+        if st.st_size > limit:
+            raise DeliveryRefused('file exceeds byte limit')
+        chunks = []
+        total = 0
+        while True:
+            chunk = os.read(fd, 1 << 20)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > limit:
+                raise DeliveryRefused('file exceeds byte limit')
+            chunks.append(chunk)
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
 def _atomic(path: Path, data: bytes) -> None: checkpoint._atomic(path, data)
 def _chain(path: Path) -> None:
     try: checkpoint.regular_chain(path)
@@ -34,7 +66,7 @@ def _write_json(path: Path, value: Any) -> None: _atomic(path, _json(value)+b'\n
 def _tree(root: Path) -> list[dict[str, Any]]:
     _chain(root)
     if not root.is_dir(): raise DeliveryRefused('pack root must be a directory')
-    records=[]
+    records=[]; total=0
     for current, dirs, names in os.walk(root, topdown=True, followlinks=False):
         here=Path(current)
         for name in list(dirs)+names:
@@ -49,7 +81,9 @@ def _tree(root: Path) -> list[dict[str, Any]]:
             rel=p.relative_to(root).as_posix()
             try: applications._validate_path(rel)
             except applications.Refused as exc: raise DeliveryRefused(str(exc)) from exc
-            b=p.read_bytes(); records.append({'path':rel,'size':len(b),'sha256':_sha(b)})
+            b=_read_regular(p); total+=len(b)
+            if total > MAX_TOTAL_BYTES: raise DeliveryRefused('pack exceeds aggregate byte limit')
+            records.append({'path':rel,'size':len(b),'sha256':_sha(b)})
     return records
 
 def _inventory(records: list[dict[str,Any]]) -> dict[str,Any]:
@@ -63,7 +97,7 @@ def _read_candidate(root: Path) -> tuple[dict[str,Any],dict[str,bytes],str]:
     for row in manifest['files']:
         if not isinstance(row,dict) or set(row)!={'path','size','sha256'}: raise DeliveryRefused('candidate file record malformed')
         rel=applications._validate_path(row['path']); p=root.joinpath(*rel.split('/')); _chain(p)
-        try: b=p.read_bytes()
+        try: b=_read_regular(p)
         except OSError as exc: raise DeliveryRefused(f'candidate file unavailable: {rel}') from exc
         if len(b)!=row['size'] or _sha(b)!=row['sha256']: raise DeliveryRefused(f'candidate tamper detected: {rel}')
         try: text=b.decode('utf-8')

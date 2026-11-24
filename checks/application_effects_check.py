@@ -30,6 +30,10 @@ def main():
     try:
         with tempfile.TemporaryDirectory() as td:
             ledger=Path(td)/"effects.json";deadline=int(time.time())+30
+            bad=Path(td)/"bad-effects.json";bad.write_text(json.dumps({'schema':1,'state':[],'sha256':'0'*64}),encoding='utf-8')
+            try:E._load(bad)
+            except E.EffectRefused:pass
+            else:raise AssertionError('malformed effect ledger accepted or crashed')
             E.prepare(ledger,request_id="lost-response",effect_class="idempotent",endpoint=peer.endpoint,method="POST",resource="/items",payload={"quantity":2},scope="test-session",deadline=deadline)
             peer.fail_after_commit=True
             assert E.execute(ledger,"lost-response")["state"]=="UNKNOWN"

@@ -59,9 +59,10 @@ def _safe_regular(path: Path) -> bytes:
     return absolute.read_bytes()
 
 
-def _index(path: Path) -> dict[str, Any]:
+def _index(path: Path) -> tuple[dict[str, Any], str]:
+    raw = _safe_regular(path)
     try:
-        value = json.loads(_safe_regular(path).decode("utf-8"))
+        value = json.loads(raw.decode("utf-8"))
     except (UnicodeError, json.JSONDecodeError) as exc:
         raise PacketRefused(f"invalid evidence index: {exc}") from exc
     if (not isinstance(value, dict) or value.get("schema") != 1
@@ -71,7 +72,7 @@ def _index(path: Path) -> dict[str, Any]:
             or value.get("candidate_execution_authorized") is not False
             or not isinstance(value.get("files"), list) or not value["files"]):
         raise PacketRefused("index is not an unsigned external review evidence index")
-    return value
+    return value, hashlib.sha256(raw).hexdigest()
 
 
 def _basename(path: str) -> str:
@@ -80,7 +81,7 @@ def _basename(path: str) -> str:
     leaf = re.sub(r"[^A-Za-z0-9._-]", "_", leaf).strip("._")
     return leaf or "evidence.bin"
 def export_packet(index_path: Path, output_dir: Path) -> dict[str, Any]:
-    index = _index(index_path)
+    index, index_sha256 = _index(index_path)
     target = Path(os.path.abspath(output_dir))
     if target.exists() or target.is_symlink():
         raise PacketRefused("output directory must be fresh and absent")
@@ -92,12 +93,15 @@ def export_packet(index_path: Path, output_dir: Path) -> dict[str, Any]:
         raise PacketRefused('output ancestor must be a real directory')
     items = []
     names: set[str] = set()
+    originals: set[str] = set()
     for ordinal, record in enumerate(index["files"], 1):
         if (not isinstance(record, dict) or set(record) != {"path", "sha256"}
                 or not isinstance(record["path"], str) or not record["path"]
                 or not isinstance(record["sha256"], str)
                 or not re.fullmatch(r"[0-9a-f]{64}", record["sha256"])):
             raise PacketRefused("each index file record must contain path and lowercase SHA-256")
+        if record["path"] in originals: raise PacketRefused("duplicate original evidence path")
+        originals.add(record["path"])
         original = Path(record["path"])
         data = _safe_regular(original)
         digest = _sha(data)
@@ -120,7 +124,7 @@ def export_packet(index_path: Path, output_dir: Path) -> dict[str, Any]:
             "schema": 1,
             "kind": "portable-image-review-packet",
             "source_index": str(Path(os.path.abspath(index_path))),
-            "source_index_sha256": _sha(_safe_regular(index_path)),
+            "source_index_sha256": index_sha256,
             "original_scan_status": "FAIL",
             "candidate_execution_authorized": False,
             "files": [

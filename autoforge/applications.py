@@ -14,10 +14,12 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import signal
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from typing import Any
 
 MAX_REQUEST_BYTES = 1_048_576
@@ -35,11 +37,43 @@ STOP_REQUESTED = False
 
 
 class Refused(ValueError):
-    """Input or adapter violated the narrow application contract."""
+    """Input or adapter violated the narrow application contract.
+
+    `adapter_returncode`/`adapter_stderr` are set only when an external adapter process
+    exited nonzero, so callers can distinguish a deterministic input refusal from a
+    transport, timeout or cancellation failure without parsing the exception text.
+    """
+
+    def __init__(self, message: str, *, adapter_returncode: int | None = None,
+                 adapter_stderr: str | None = None) -> None:
+        super().__init__(message)
+        self.adapter_returncode = adapter_returncode
+        self.adapter_stderr = adapter_stderr
 
 
 def _json_bytes(value: Any) -> bytes:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                      allow_nan=False).encode("utf-8")
+
+
+def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON object key")
+        result[key] = value
+    return result
+
+
+def _reject_constant(_value: str) -> Any:
+    raise ValueError("nonstandard JSON constant")
+
+
+def _strict_loads(data: bytes) -> Any:
+    value = json.loads(data.decode("utf-8"), object_pairs_hook=_strict_object,
+                       parse_constant=_reject_constant)
+    _json_bytes(value)  # reject nonfinite numbers at the decode boundary
+    return value
 
 
 def _read_json(path: Path, limit: int = MAX_REQUEST_BYTES) -> Any:
@@ -51,8 +85,8 @@ def _read_json(path: Path, limit: int = MAX_REQUEST_BYTES) -> Any:
     if len(data) > limit:
         raise Refused(f"JSON input exceeds {limit} bytes")
     try:
-        return json.loads(data.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return _strict_loads(data)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
         raise Refused(f"invalid UTF-8 JSON: {exc}") from exc
 
 
@@ -227,7 +261,9 @@ def _run_json_command(argv: list[str], payload: dict[str, Any], timeout: int = C
                 if len(out) > MAX_STDOUT_BYTES or len(err) > MAX_STDERR_BYTES:
                     raise Refused("adapter output exceeded bounded stdout/stderr limit")
                 if proc.returncode != 0:
-                    raise Refused(f"adapter exited {proc.returncode}: {err.decode('utf-8', 'replace')[:2000]}")
+                    detail = err.decode('utf-8', 'replace')[:2000]
+                    raise Refused(f"adapter exited {proc.returncode}: {detail}",
+                                  adapter_returncode=proc.returncode, adapter_stderr=detail)
                 if STOP_REQUESTED or (should_stop is not None and should_stop()):
                     raise Refused("operator STOP or adapter cancellation received before adapter acceptance")
                 try:
@@ -309,18 +345,80 @@ def _resolve_references(reference_store: Path, package_ids: list[str]) -> list[d
 
 
 def _verify_staged_files(workspace: Path, manifest: dict[str, Any]) -> None:
-    for entry in manifest["files"]:
+    records = manifest.get("files")
+    if not isinstance(records, list) or not 1 <= len(records) <= MAX_FILES:
+        raise Refused("staged manifest files must be a bounded nonempty array")
+    seen: set[str] = set()
+    folded: set[str] = set()
+    total = 0
+    for entry in records:
+        if not isinstance(entry, dict) or set(entry) != {"path", "size", "sha256"}:
+            raise Refused("staged manifest file record malformed")
+        path, size, digest = entry.get("path"), entry.get("size"), entry.get("sha256")
+        if not isinstance(path, str) or _validate_path(path) != path:
+            raise Refused("staged manifest path malformed")
+        if path in seen or path.casefold() in folded:
+            raise Refused(f"staged manifest duplicate path: {path}")
+        if type(size) is not int or not 0 <= size <= MAX_FILE_BYTES or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise Refused(f"staged manifest size or digest malformed: {path}")
+        total += size
+        if total > MAX_CANDIDATE_BYTES:
+            raise Refused("staged manifest exceeds aggregate byte limit")
+        seen.add(path); folded.add(path.casefold())
         current = workspace
-        for part in entry["path"].split("/"):
+        for part in path.split("/"):
             current = current / part
             if current.is_symlink():
-                raise Refused(f"staged path traverses a symlink: {entry['path']}")
-        if not current.is_file():
-            raise Refused(f"staged file missing: {entry['path']}")
+                raise Refused(f"staged path traverses a symlink: {path}")
+        try:
+            mode = current.lstat().st_mode
+        except OSError as exc:
+            raise Refused(f"staged file missing: {path}") from exc
+        if not stat.S_ISREG(mode):
+            raise Refused(f"staged file is not a regular file: {path}")
         with current.open("rb") as stream:
-            data = stream.read(entry["size"] + 1)
-        if len(data) != entry["size"] or hashlib.sha256(data).hexdigest() != entry["sha256"]:
-            raise Refused(f"staged file changed during validation: {entry['path']}")
+            data = stream.read(size + 1)
+        if len(data) != size or hashlib.sha256(data).hexdigest() != digest:
+            raise Refused(f"staged file changed during validation: {path}")
+    # Validate the whole inventory, not only the listed files.
+    # validation.json is controller metadata written beside an accepted revision.
+    listed = {"manifest.json", "validation.json", *seen}
+    for node in workspace.rglob("*"):
+        relative = node.relative_to(workspace).as_posix()
+        if node.is_symlink():
+            raise Refused(f"staged workspace contains a symlink: {relative}")
+        if node.is_dir():
+            if not any(p.startswith(relative + "/") for p in seen):
+                raise Refused(f"staged workspace contains an unmanifested directory: {relative}")
+        elif node.is_file():
+            if relative not in listed:
+                raise Refused(f"staged workspace contains an unmanifested file: {relative}")
+        else:
+            raise Refused(f"staged workspace contains a special file: {relative}")
+
+
+def _publish_report(destination: Path, value: dict[str, Any]) -> None:
+    data = (json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")
+    if len(data) > MAX_REPORT_BYTES:
+        raise Refused("report exceeds byte limit")
+    target = destination / "report.json"
+    try:
+        mode = target.lstat().st_mode
+    except FileNotFoundError:
+        mode = None
+    if mode is not None and (stat.S_ISLNK(mode) or not stat.S_ISREG(mode)):
+        raise Refused("report leaf must be a regular file")
+    tmp = destination / f".report.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data); stream.flush(); os.fsync(stream.fileno())
+        os.replace(tmp, target)
+    finally:
+        try:
+            tmp.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def cycle(request: Any, proposer: list[str], builder: list[str], output: Path, rounds: int, trusted: bool, reference_store: Path, resume: bool = False, max_new_rounds: int | None = None) -> dict[str, Any]:
@@ -385,7 +483,7 @@ def cycle(request: Any, proposer: list[str], builder: list[str], output: Path, r
                 save(checkpoint, state)
             if status == "PASS":
                 result = {"schema": 1, "status": "PASS", "scope": "adapter-reported build/test only; no runtime or deployment claim", "rounds_requested": rounds, "rounds_completed": len(history), "history": history, "resume": "validated checkpoint; no external invocation"}
-                (destination / "report.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                _publish_report(destination, result)
                 return result
             added = 0
             for n in range(state["next_round"], rounds + 1):
@@ -425,13 +523,13 @@ def cycle(request: Any, proposer: list[str], builder: list[str], output: Path, r
     except (Refused, ResumeRefused, OSError, ValueError) as exc:
         if 'state' in locals() and not resume:
             failure = {"schema":1,"status":"HOLD","reason":str(exc),"rounds_completed":len(history),"history":history,"ambiguous_external_call":state.get('inflight')}
-            (destination/'report.json').write_text(json.dumps(failure,ensure_ascii=True,indent=2)+'\n',encoding='utf-8')
+            _publish_report(destination, failure)
         raise
     finally:
         signal.signal(signal.SIGINT, old_int); signal.signal(signal.SIGTERM, old_term)
     paused = status not in ("PASS",) and len(history) < rounds and not STOP_REQUESTED
     result = {"schema": 1, "status": status if not paused else "HOLD", "scope": "adapter-reported build/test only; no runtime or deployment claim", "rounds_requested": rounds, "rounds_completed": len(history), "history": history, "paused": paused, "history_regenerated_from_checkpoint": bool(resume)}
-    (destination / "report.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _publish_report(destination, result)
     return result
 
 def main() -> int:

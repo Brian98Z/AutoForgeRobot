@@ -167,11 +167,14 @@ def _pointer(output: Path) -> dict[str, Any] | None:
         return None
     _regular_chain(path)
     try:
-        raw = path.read_bytes()
+        with path.open("rb") as stream: raw = stream.read(4097)
+        if len(raw)>4096: raise ProjectRefused("active pointer exceeds size limit")
         value = json.loads(raw.decode("utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise ProjectRefused(f"active pointer is unreadable: {exc}") from exc
-    if not isinstance(value, dict) or set(value) != {"schema", "revision", "candidate_sha256", "previous"} or value["schema"] != 1:
+    if not isinstance(value, dict) or set(value) != {"schema", "revision", "candidate_sha256", "previous"} or type(value["schema"]) is not int or value["schema"] != 1:
+        raise ProjectRefused("active pointer malformed")
+    if not isinstance(value["revision"],str) or not re.fullmatch(r"[0-9a-f]{64}-[0-9a-f]{12}",value["revision"]) or not isinstance(value["candidate_sha256"],str) or not re.fullmatch(r"[0-9a-f]{64}",value["candidate_sha256"]) or not (value["previous"] is None or isinstance(value["previous"],str)):
         raise ProjectRefused("active pointer malformed")
     return value
 
@@ -211,15 +214,13 @@ def write_files(source: Path, files: list[dict[str, str]], *, expected_baseline:
     candidate, contents = applications.validate_candidate({"schema": 1, "goal": goal, "references": references, "files": files})
     source_abs = Path(os.path.abspath(source))
     _check_baseline(source_abs, expected_baseline)
-    try:
-        output_abs = Path(os.path.abspath(output))
-        output_abs.relative_to(source_abs)
-    except ValueError:
-        pass
-    else:
-        raise ProjectRefused("transaction output must be outside the source tree")
+    output_abs = Path(os.path.abspath(output))
     if source_abs == output_abs:
         raise ProjectRefused("transaction output must be outside the source tree")
+    for inner,outer,label in ((source_abs,output_abs,"source"),(output_abs,source_abs,"output")):
+        try: inner.relative_to(outer)
+        except ValueError: continue
+        raise ProjectRefused(f"transaction {label} must not contain the other tree")
     out = output_abs
     if out.exists() and (out.is_symlink() or not out.is_dir()):
         raise ProjectRefused("transaction output must be a directory")
@@ -285,6 +286,8 @@ def _verified_manifest(output: Path, revision: str, candidate_digest: str) -> di
         raise ProjectRefused("revision manifest malformed")
     if type(manifest["schema"]) is not int or manifest["schema"] != 1:
         raise ProjectRefused("revision manifest schema invalid")
+    if not isinstance(manifest["workspace"],str) or Path(manifest["workspace"]).resolve() != root.resolve():
+        raise ProjectRefused("revision manifest workspace does not bind this revision")
     canonical = {key: manifest[key] for key in ("schema", "goal", "references", "files")}
     computed = _digest(_json_bytes(canonical))
     if manifest["candidate_sha256"] != computed or computed != candidate_digest or revision[:64] != computed:

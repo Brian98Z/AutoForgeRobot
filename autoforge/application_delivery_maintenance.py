@@ -165,8 +165,13 @@ def export_package(source: Path, output: Path) -> dict[str, Any]:
     delivery._chain(output)
     if output.exists():
         raise delivery.DeliveryRefused('export destination must be absent')
-    shutil.copytree(source, output, copy_function=shutil.copy2)
-    copied = delivery.validate_pack(output)
+    created=False
+    try:
+        shutil.copytree(source, output, copy_function=shutil.copy2); created=True
+        copied = delivery.validate_pack(output)
+    except BaseException:
+        if created: shutil.rmtree(output,ignore_errors=True)
+        raise
     if (source / 'delivery.json').read_bytes() != (output / 'delivery.json').read_bytes():
         raise delivery.DeliveryRefused('exported package metadata differs from source')
     if before['candidate_sha256'] != copied['candidate_sha256'] or before['inventory'] != copied['inventory']:
@@ -209,7 +214,9 @@ def _cli() -> int:
                 encoded = json.dumps(result, sort_keys=True, ensure_ascii=False, indent=2) + '\n'
                 if len(encoded.encode('utf-8')) > builder.MAX_REPORT:
                     raise delivery.DeliveryRefused('diagnostic report exceeds size limit')
-                args.report.write_text(encoded, encoding='utf-8')
+                delivery._chain(args.report)
+                if args.report.exists() or args.report.is_symlink(): raise delivery.DeliveryRefused('report destination must be absent')
+                with args.report.open('xb') as stream: stream.write(encoded.encode('utf-8'))
         elif args.action == 'diagnose':
             result = diagnose(args.checkpoint)
         elif args.action == 'upgrade':

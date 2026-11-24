@@ -9,6 +9,16 @@ class DependencyRefused(ValueError): pass
 
 def _canonical(value: Any)->bytes: return checkpoint.canonical(value)
 def _sha(data:bytes)->str: return checkpoint.digest(data)
+MAX_READ_BYTES=256*1024*1024
+
+
+def _read_limited(path:Path,limit:int=MAX_READ_BYTES)->bytes:
+    with Path(path).open('rb') as stream:
+        data=stream.read(limit+1)
+    if len(data)>limit:raise DependencyRefused('artifact exceeds read size limit')
+    return data
+
+
 def _chain(path:Path)->None:
     try: checkpoint.regular_chain(path)
     except Exception as exc: raise DependencyRefused(str(exc)) from exc
@@ -200,7 +210,8 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def acquire_https(url:str, cache:Path, expected_sha256:str, *, source_id:str, sources:dict[str,str], license_record:str, package_name:str, package_version:str, authorized:bool=False, timeout:int=30, max_bytes:int=256*1024*1024)->dict[str,Any]:
     """Download one allowlisted HTTPS artifact; never follows redirects or sends caller credentials."""
-    if not authorized: raise DependencyRefused('explicit dependency-acquisition authorization required')
+    if authorized is not True: raise DependencyRefused('explicit dependency-acquisition authorization required')
+    if not isinstance(license_record,str) or not license_record.strip(): raise DependencyRefused('nonblank license record required')
     if source_id not in sources: raise DependencyRefused('artifact source is not allowlisted')
     parsed=urllib.parse.urlsplit(url); approved=urllib.parse.urlsplit(sources[source_id])
     try: approved_port=approved.port; requested_port=parsed.port
@@ -229,15 +240,19 @@ def _store_bytes(data:bytes,cache:Path,expected_sha256:str,*,source_id:str,licen
     cache=Path(cache).absolute(); _chain(cache); cache.mkdir(parents=True,exist_ok=True); _chain(cache)
     target=cache/actual; _chain(target)
     if target.exists():
-        if not target.is_file() or _sha(target.read_bytes())!=actual: raise DependencyRefused('existing cache entry failed immutable digest check')
+        if not target.is_file() or _sha(_read_limited(target))!=actual: raise DependencyRefused('existing cache entry failed immutable digest check')
     else:
-        temp=cache/f'.{actual}.{os.getpid()}.tmp'
+        temp=cache/f'.{actual}.{os.getpid()}.{os.urandom(8).hex()}.tmp'
+        created=False
         try:
-            with temp.open('xb') as f: f.write(data); f.flush(); os.fsync(f.fileno())
+            with temp.open('xb') as f:
+                created=True
+                f.write(data); f.flush(); os.fsync(f.fileno())
             try: os.link(temp,target)
             except FileExistsError: pass
-        finally: temp.unlink(missing_ok=True)
-        if _sha(target.read_bytes())!=actual: raise DependencyRefused('cached artifact verification failed')
+        finally:
+            if created: temp.unlink(missing_ok=True)
+        if _sha(_read_limited(target))!=actual: raise DependencyRefused('cached artifact verification failed')
         os.chmod(target,stat.S_IREAD)
     record={'schema':1,'name':package_name,'version':package_version,'source':source_id,'artifact_sha256':actual,'size':len(data),'license':license_record,'cache_file':str(target)}
     manifest=cache/(actual+'.json')
@@ -249,13 +264,15 @@ def _store_bytes(data:bytes,cache:Path,expected_sha256:str,*,source_id:str,licen
 
 def import_artifact(source:Path, cache:Path, expected_sha256:str, *, source_id:str, license_record:str, package_name:str, package_version:str, authorized:bool=False)->dict[str,Any]:
     """Import one existing local artifact; no download, execution, or overwrite."""
-    if not authorized: raise DependencyRefused('explicit dependency-acquisition authorization required')
+    if authorized is not True: raise DependencyRefused('explicit dependency-acquisition authorization required')
+    if not isinstance(license_record,str) or not license_record.strip(): raise DependencyRefused('nonblank license record required')
     if not package_name or not package_version: raise DependencyRefused('package name and version required')
     if not re.fullmatch(r'[0-9a-f]{64}',expected_sha256): raise DependencyRefused('expected SHA-256 required')
     source=Path(source).absolute(); cache=Path(cache).absolute(); _chain(source); _chain(cache)
     st=source.lstat()
     if not stat.S_ISREG(st.st_mode) or getattr(st,'st_file_attributes',0)&0x400: raise DependencyRefused('artifact must be a regular local file')
-    return _store_bytes(source.read_bytes(),cache,expected_sha256,source_id=source_id,license_record=license_record,package_name=package_name,package_version=package_version)
+    if st.st_size>MAX_READ_BYTES: raise DependencyRefused('artifact exceeds read size limit')
+    return _store_bytes(_read_limited(source),cache,expected_sha256,source_id=source_id,license_record=license_record,package_name=package_name,package_version=package_version)
 
 def verify_cache(cache:Path, records:list[dict[str,Any]], *, expected_sources:set[str])->dict[str,Any]:
     cache=Path(cache).absolute(); _chain(cache); verified=[]
@@ -264,8 +281,9 @@ def verify_cache(cache:Path, records:list[dict[str,Any]], *, expected_sources:se
         sha=record.get('artifact_sha256')
         if not isinstance(sha,str) or not re.fullmatch(r'[0-9a-f]{64}',sha): raise DependencyRefused('invalid artifact hash')
         path=cache/sha; _chain(path)
-        if not path.is_file() or _sha(path.read_bytes())!=sha: raise DependencyRefused('cache artifact missing or tampered')
-        proof=json.loads((cache/(sha+'.json')).read_text(encoding='utf-8'))
+        if not path.is_file() or _sha(_read_limited(path))!=sha: raise DependencyRefused('cache artifact missing or tampered')
+        proof_path=cache/(sha+'.json'); _chain(proof_path)
+        proof=json.loads(_read_limited(proof_path,4*1024*1024).decode('utf-8'))
         if proof.get('artifact_sha256')!=sha or any(proof.get(k)!=record.get(k) for k in ('source','license','name','version','size')): raise DependencyRefused('cache provenance mismatch')
         if not all(isinstance(record.get(k),str) and record[k] for k in ('name','version')): raise DependencyRefused('cache record must bind package name/version')
         verified.append({'name':record['name'],'version':record['version'],'source':record['source'],'artifact_sha256':sha,'license':proof['license'],'size':path.stat().st_size})
@@ -309,7 +327,7 @@ def verify_local_artifacts(root: Path, records: list[dict[str, Any]], *,
         if record['source'] not in expected_sources:
             raise DependencyRefused('local artifact source is not allowlisted')
         rel=Path(record['path'])
-        if rel.is_absolute() or '\\' in record['path'] or any(p in {'', '.', '..'} for p in record['path'].split('/')):
+        if rel.is_absolute() or '\\' in record['path'] or any(p in {'', '.', '..'} or ':' in p for p in record['path'].split('/')):
             raise DependencyRefused('local artifact path must be a safe relative POSIX path')
         if not re.fullmatch(r'[0-9a-f]{64}',record['artifact_sha256']):
             raise DependencyRefused('local artifact hash must be lowercase SHA-256')
@@ -317,7 +335,7 @@ def verify_local_artifacts(root: Path, records: list[dict[str, Any]], *,
         if identity in seen: raise DependencyRefused('duplicate local artifact identity')
         seen.add(identity)
         path=root.joinpath(*record['path'].split('/')); _chain(path)
-        if not path.is_file() or _sha(path.read_bytes()) != record['artifact_sha256']:
+        if not path.is_file() or path.stat().st_size > MAX_READ_BYTES or _sha(_read_limited(path)) != record['artifact_sha256']:
             raise DependencyRefused('local artifact missing or tampered')
         verified.append({k:record[k] for k in ('kind','name','version','source','license','path','artifact_sha256')})
     ordered=sorted(verified,key=lambda r:(r['kind'],r['name'].casefold(),r['version'],r['path']))
@@ -624,6 +642,7 @@ def grype_image_gate(image: str, *, scanner: Path, expected_scanner_sha256: str,
             repo_digests=target.get('repoDigests')
             if supplied != image or source.get('type') != 'image' or not isinstance(repo_digests,list) or expected_repo_digest not in repo_digests or not isinstance(manifest_digest,str) or not re.fullmatch(r'sha256:[0-9a-f]{64}',manifest_digest): return hold('Grype report source does not bind to exact requested local image and repository digest',report_source={'type':source.get('type'),'userInput':supplied,'manifestDigest':manifest_digest,'imageID':target.get('imageID'),'repoDigests':repo_digests})
             matches=report['matches']
+            if run.returncode==1 and not matches: return hold('Grype scanner reported failure without findings',scanner_exit_code=1)
             if any(not isinstance(x,dict) or not isinstance(x.get('vulnerability'),dict) or not isinstance(x['vulnerability'].get('severity'),str) for x in matches): return hold('Grype report contains malformed findings')
             digest=_sha(raw); critical=sum(1 for x in matches if x['vulnerability']['severity']=='Critical'); high=sum(1 for x in matches if x['vulnerability']['severity']=='High')
             _atomic(report_path,raw)
@@ -656,7 +675,16 @@ def verify_image_applicability(report_path:Path, scan_gate_path:Path, signed_con
                                reviewer_public_key_pem:bytes, reviewer_key_sha256:str, now:str|None=None)->dict[str,Any]:
     """Verify a separately signed, exact-scan applicability decision; never alters the raw scan."""
     if not re.fullmatch(r'[0-9a-f]{64}',pinned_key_sha256) or _sha(pinned_public_key_pem)!=pinned_key_sha256: raise DependencyRefused('operator-pinned contract signing key fingerprint missing or mismatched')
-    if not re.fullmatch(r'[0-9a-f]{64}',reviewer_key_sha256) or _sha(reviewer_public_key_pem)!=reviewer_key_sha256 or reviewer_key_sha256==pinned_key_sha256: raise DependencyRefused('reviewer public key must be separately operator-pinned and distinct from contract signer')
+    if not re.fullmatch(r'[0-9a-f]{64}',reviewer_key_sha256) or _sha(reviewer_public_key_pem)!=reviewer_key_sha256: raise DependencyRefused('reviewer public key must be separately operator-pinned')
+    try:
+        from cryptography.hazmat.primitives import serialization
+        def _key_identity(pem:bytes)->bytes:
+            key=serialization.load_pem_public_key(pem)
+            return key.public_bytes(serialization.Encoding.DER,serialization.PublicFormat.SubjectPublicKeyInfo)
+        if _key_identity(reviewer_public_key_pem)==_key_identity(pinned_public_key_pem): raise DependencyRefused('reviewer public key must differ from contract signer')
+    except ImportError as exc: raise DependencyRefused('Ed25519 verification unavailable') from exc
+    except DependencyRefused: raise
+    except Exception as exc: raise DependencyRefused('pinned public key is invalid') from exc
     try:
         from datetime import datetime,timezone
         for original in (report_path,scan_gate_path,source_root,regression_path):
@@ -785,7 +813,7 @@ def _cli()->int:
         elif a.cmd=='refresh-osv':
             lock=json.loads(a.lock.read_text(encoding='utf-8')); sources=json.loads(a.sources.read_text(encoding='utf-8'))
             result=query_osv(lock,sources=sources,timeout=a.timeout)
-            if result['status'] in {'PASS','FAIL'} and 'snapshot' in result: _atomic(a.snapshot_out,_canonical(result['snapshot'])+b'\n')
+            if result['status'] in {'PASS','FAIL'} and 'snapshot' in result: _atomic(a.snapshot_out,_canonical(result['snapshot']))
             if a.output is not None: _atomic(a.output,_canonical(result)+b'\n')
         elif a.cmd=='verify-local-bundle':
             result=verify_local_artifact_bundle(a.root,a.bundle.read_bytes(),a.signature.read_bytes(),a.pinned_public_key.read_bytes(),expected_sources=set(a.sources.split(',')))

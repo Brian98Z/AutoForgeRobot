@@ -46,9 +46,11 @@ def _failure_locations(stderr: bytes, root: Path) -> list[str]:
     last_source_location = None
     for raw_path, raw_line in re.findall(r'File "(/candidate/[^"\n]+)", line ([0-9]+)', stderr.decode('utf-8', 'replace')):
         relative = raw_path.removeprefix('/candidate/')
-        if relative.startswith('/') or any(p in ('', '.', '..') for p in relative.split('/')):
+        if (not relative or relative.startswith('/')
+                or any(not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", part) or part in ('.', '..') for part in relative.split('/'))):
             continue
-        if (root / relative).is_file():
+        target = root.joinpath(*relative.split('/'))
+        if target.is_file() and target.resolve().is_relative_to(root.resolve()):
             coordinate = f'{relative}:{raw_line}'
             if coordinate not in locations:
                 locations.append(coordinate)
@@ -77,7 +79,7 @@ def _failure_locations(stderr: bytes, root: Path) -> list[str]:
             if error_class in ('NameError', 'UnboundLocalError') and last_source_location:
                 relative, line_number = last_source_location
                 try:
-                    tree = ast.parse((root / relative).read_bytes())
+                    tree = ast.parse(target.read_bytes())
                     names = sorted({node.id for node in ast.walk(tree)
                                     if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
                                     and node.lineno == line_number and len(node.id) <= 64})[:8]
@@ -158,8 +160,10 @@ def _manifest(raw: Any, *, require_entrypoint: bool = True) -> tuple[Path, str]:
         if not isinstance(row, dict) or set(row) != {"path", "size", "sha256"}:
             raise BuildFailure("invalid manifest file record")
         rel, size, digest = row["path"], row["size"], row["sha256"]
-        if not isinstance(rel, str) or not rel or rel.startswith(("/", "\\")) or "\\" in rel or any(x in ("", ".", "..") for x in rel.split("/")) or re.match(r"^[A-Za-z]:", rel):
+        if not isinstance(rel, str) or not rel or rel.startswith(("/", "\\")) or "\\" in rel or re.match(r"^[A-Za-z]:", rel):
             raise BuildFailure("unsafe manifest path")
+        if any(part in ("", ".", "..") or ":" in part for part in rel.split("/")):
+            raise BuildFailure("unsafe manifest path component")
         folded_path = rel.casefold()
         if rel in paths or folded_path in folded or type(size) is not int or size < 0 or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
             raise BuildFailure("invalid or duplicate/case-colliding manifest record")
@@ -351,7 +355,16 @@ def build(manifest: Any, contract_raw: Any, engine: str, image: str, preflight_i
         if len(out) > MAX_OUT:
             build_pass = False; test_pass = False; observations.append(f"{scenario['name']}: stdout exceeded limit."); continue
         try:
-            raw_lines = out.decode("utf-8", "strict").splitlines()
+            framed = out.split(b"\n")
+            if framed and framed[-1] == b"":
+                framed.pop()
+            raw_lines = []
+            for line in framed:
+                if line.endswith(b"\r"):
+                    line = line[:-1]
+                if not line or len(line) > MAX_LINE:
+                    raise ValueError("invalid JSON-lines framing")
+                raw_lines.append(line.decode("utf-8", "strict"))
             actual = [json.loads(line, object_pairs_hook=_strict_object, parse_constant=lambda _value: (_ for _ in ()).throw(ValueError("nonstandard JSON"))) for line in raw_lines]
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError, BuildFailure):
             build_pass = False; test_pass = False; observations.append(f"{scenario['name']}: invalid JSON-lines output; details omitted."); continue

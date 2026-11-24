@@ -164,6 +164,72 @@ def main() -> None:
         noop_state = agent_runtime.agent_session.load(root / 'unchanged-progress')
         assert noop_state['candidate'] == unchanged
         assert all(json.loads(m['content'])['changed'] is False for m in noop_state['messages'] if m.get('tool_call_id', '').startswith('unchanged-'))
-        print(json.dumps({"status": "PASS", "scope": "protocol simulation; builder stub is AST-only, not real runtime/business acceptance", "checks": ["baseline required before existing-file mutation", "validation FAIL permits repair", "exact repaired candidate validated PASS", "premature model stop is HOLD", "event log and final report persisted", "unchanged writes stop as repeated no progress"]}, ensure_ascii=False))
+        # A deterministic adapter refusal (exit 2 + JSON FAIL) is feedback, not an unknown
+        # side effect: the model must be able to repair the candidate and validate again.
+        refusal_output = root / 'refusal-continues'
+        queue[:] = [
+            {'role': 'assistant', 'content': None, 'tool_calls': [_call('validate', {}, 'refused-first')]},
+            {'role': 'assistant', 'content': None, 'tool_calls': [_call('validate', {}, 'accepted-after-refusal')]}]
+        refuse_once = {'pending': True}
+        def refusing_builder(argv, payload):
+            if refuse_once['pending']:
+                refuse_once['pending'] = False
+                raise agent_runtime.applications.Refused(
+                    'adapter exited 2: {"status": "FAIL", "reason": "fixed entrypoint main.py is absent"}',
+                    adapter_returncode=2,
+                    adapter_stderr='{"status": "FAIL", "reason": "fixed entrypoint main.py is absent"}')
+            return trusted_builder(argv, payload)
+        with patch.object(agent_runtime.agent_transport, 'complete', side_effect=transport), patch.object(agent_runtime.applications, '_run_json_command', side_effect=refusing_builder):
+            recovered_refusal = agent_runtime.run(request, [], builder_argv, refusal_output, initial_candidate=unchanged)
+        assert recovered_refusal['status'] == 'PASS', recovered_refusal
+        refusal_events = [json.loads(line) for line in (refusal_output / 'events.jsonl').read_text(encoding='utf-8').splitlines()]
+        refusal_feedback = next(e['result'] for e in refusal_events if e.get('type') == 'tool_result' and e.get('call_id') == 'refused-first')
+        assert refusal_feedback['status'] == 'FAIL' and 'entrypoint main.py is absent' in refusal_feedback['observations'][0]
+        assert not any(e.get('type') == 'run_finished' and e.get('status') == 'HOLD' for e in refusal_events)
+        # Only the dispatcher's exit-2 provenance with a strict JSON FAIL payload is retryable.
+        good = agent_runtime.applications.Refused(
+            'adapter exited 2: x', adapter_returncode=2,
+            adapter_stderr='{"status": "FAIL", "reason": "fixed entrypoint main.py is absent"}')
+        assert agent_runtime._refused_validation(good)['status'] == 'FAIL'
+        rejected_refusals = [
+            agent_runtime.applications.Refused('adapter exited 2: {"status": "FAIL", "reason": "x"}'),
+            agent_runtime.applications.Refused('adapter exited 1: x', adapter_returncode=1,
+                                               adapter_stderr='{"status": "FAIL", "reason": "x"}'),
+            agent_runtime.applications.Refused('adapter exited 2: x', adapter_returncode=2, adapter_stderr='not json'),
+            agent_runtime.applications.Refused('adapter exited 2: x', adapter_returncode=2,
+                                               adapter_stderr='{"status": "PASS", "reason": "x"}'),
+            agent_runtime.applications.Refused('adapter exited 2: x', adapter_returncode=2,
+                                               adapter_stderr='{"status": "FAIL", "reason": 1}'),
+            agent_runtime.applications.Refused('adapter exited 2: x', adapter_returncode=2,
+                                               adapter_stderr='{"status": "FAIL"} trailing')]
+        assert all(agent_runtime._refused_validation(exc) is None for exc in rejected_refusals), 'untrusted refusal was retryable'
+        # The accepted refusal must survive a persisted stop/resume without becoming terminal.
+        resume_refusal = root / 'refusal-resume'
+        queue[:] = [
+            {'role': 'assistant', 'content': None, 'tool_calls': [_call('validate', {}, 'refuse-persist')]},
+            {'role': 'assistant', 'content': 'Waiting after refusal', 'tool_calls': []}]
+        refuse_once['pending'] = True
+        with patch.object(agent_runtime.agent_transport, 'complete', side_effect=transport), patch.object(agent_runtime.applications, '_run_json_command', side_effect=refusing_builder):
+            stopped_refusal = agent_runtime.run(request, [], builder_argv, resume_refusal, initial_candidate=unchanged)
+        assert stopped_refusal['task_status'] == 'WAITING_INPUT', stopped_refusal
+        persisted = agent_runtime.agent_session.load(resume_refusal)
+        assert persisted['inflight'] is None
+        assert persisted['validated_candidate'] == agent_runtime._candidate_digest(persisted['candidate'])
+        persisted_events = [json.loads(line) for line in (resume_refusal / 'events.jsonl').read_text(encoding='utf-8').splitlines()]
+        persisted_feedback = next(e['result'] for e in persisted_events if e.get('type') == 'tool_result' and e.get('call_id') == 'refuse-persist')
+        assert persisted_feedback['status'] == 'FAIL'
+        queue[:] = [{'role': 'assistant', 'content': None, 'tool_calls': [_call('validate', {}, 'accepted-after-resume')]}]
+        with patch.object(agent_runtime.agent_transport, 'complete', side_effect=transport), patch.object(agent_runtime.applications, '_run_json_command', side_effect=trusted_builder):
+            resumed_refusal = agent_runtime.run(request, [], builder_argv, resume_refusal, resume=True)
+        assert resumed_refusal['status'] == 'PASS', resumed_refusal
+        # Unknown validate failures keep the conservative terminal classification.
+        unknown_output = root / 'unknown-hold'
+        queue[:] = [{'role': 'assistant', 'content': None, 'tool_calls': [_call('validate', {}, 'unknown-refusal')]}]
+        def unknown_builder(argv, payload):
+            raise agent_runtime.applications.Refused('adapter deadline exceeded (5s)')
+        with patch.object(agent_runtime.agent_transport, 'complete', side_effect=transport), patch.object(agent_runtime.applications, '_run_json_command', side_effect=unknown_builder):
+            unknown_result = agent_runtime.run(request, [], builder_argv, unknown_output, initial_candidate=unchanged)
+        assert unknown_result['status'] == 'HOLD' and unknown_result['reason_code'] == 'unknown_tool_side_effect', unknown_result
+        print(json.dumps({"status": "PASS", "scope": "protocol simulation; builder stub is AST-only, not real runtime/business acceptance", "checks": ["baseline required before existing-file mutation", "validation FAIL permits repair", "exact repaired candidate validated PASS", "premature model stop is HOLD", "event log and final report persisted", "unchanged writes stop as repeated no progress", "deterministic adapter refusal permits repair", "refusal provenance and payload boundaries enforced", "accepted refusal survives persisted resume", "unknown validate failure remains a terminal HOLD"]}, ensure_ascii=False))
 if __name__ == "__main__":
     main()

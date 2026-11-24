@@ -21,7 +21,7 @@ def hash_password(password:str, *, salt:bytes|None=None, iterations:int=600_000)
     if not isinstance(password,str) or len(password)<12 or len(password)>4096: raise AuthRefused('password must be 12..4096 characters')
     if type(iterations)is not int or not 100_000<=iterations<=2_000_000: raise AuthRefused('PBKDF2 iterations out of policy')
     salt=secrets.token_bytes(16) if salt is None else salt
-    if len(salt)<16: raise AuthRefused('salt must be at least 16 bytes')
+    if not isinstance(salt,bytes) or len(salt)<16: raise AuthRefused('salt must be at least 16 bytes')
     digest=hashlib.pbkdf2_hmac('sha256',password.encode('utf-8'),salt,iterations,dklen=32)
     return {'scheme':'pbkdf2-sha256','iterations':iterations,'salt':salt.hex(),'digest':digest.hex()}
 
@@ -43,7 +43,10 @@ class SessionStore:
         if not self.path.exists():return {'schema':1,'sessions':{}}
         try: env=json.loads(self.path.read_text(encoding='utf-8'))
         except (OSError,ValueError) as e:raise AuthRefused(f'session store unreadable: {e}') from e
-        if not isinstance(env,dict) or set(env)!={'schema','state','sha256'} or env['schema']!=1 or env['sha256']!=checkpoint.digest(_canonical(env['state'])) or not isinstance(env['state'],dict) or not isinstance(env['state'].get('sessions'),dict):raise AuthRefused('session store integrity failure')
+        if not isinstance(env,dict) or set(env)!={'schema','state','sha256'} or env['schema']!=1 or not isinstance(env['state'],dict) or not isinstance(env['state'].get('sessions'),dict) or not isinstance(env.get('sha256'),str):raise AuthRefused('session store integrity failure')
+        try: actual=checkpoint.digest(_canonical(env['state']))
+        except (TypeError,ValueError,KeyError) as e: raise AuthRefused('session store integrity failure') from e
+        if env['sha256']!=actual:raise AuthRefused('session store integrity failure')
         return env['state']
     def _save(self,state:dict[str,Any])->None:
         env={'schema':1,'state':state,'sha256':checkpoint.digest(_canonical(state))}; _atomic(self.path,_canonical(env)+b'\n')
@@ -81,7 +84,7 @@ def authorize(principal:dict[str,Any]|None, *, role:str, tenant_id:str, resource
 
 def redact_auth_fields(value:Any)->Any:
     """Return recursively redacted data for model/log boundaries; never serialize tokens."""
-    secret={'password','passwd','token','session','authorization','cookie','secret','credential','api_key','apikey','private_key'}
+    secret={'password','passwd','token','access_token','refresh_token','id_token','session','authorization','cookie','secret','client_secret','credential','api_key','apikey','private_key'}
     if isinstance(value,dict):return {k:('[REDACTED]' if str(k).casefold() in secret else redact_auth_fields(v)) for k,v in value.items()}
     if isinstance(value,list):return [redact_auth_fields(v) for v in value]
     return value

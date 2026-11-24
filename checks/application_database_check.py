@@ -13,6 +13,11 @@ def main()->int:
     versioned=a.expected_version is not None or a.target_version is not None
     if versioned and ((a.expected_version is None or a.target_version is None) or not a.migration or a.rollback or (bool(a.sqlite_test_db)==bool(a.engine and a.image))):
         print(json.dumps({'status':'BLOCKED','reason':'paired schema versions require migration and exactly one SQLite or PostgreSQL target; no rollback acceptance mode'}));return 2
+    fake_handle={'status':'READY','engine':'docker','container':'x','username':'u','database':'d'}
+    for unsafe_sql in ('SELECT 1; COMMIT; SELECT 2;','BEGIN; SELECT 1;','SELECT 1; ROLLBACK;'):
+        try: db.postgres_migrate(fake_handle,unsafe_sql,expected_version=0,target_version=1)
+        except db.DatabaseFailure: pass
+        else: raise AssertionError('mid-statement transaction control was accepted')
     result={'schema':1,'host_logic':{'status':'IMPLEMENTED_NOT_EXERCISED','limitations':['No database is created unless an explicit test DB path and operation are provided.']},'container_acceptance':'NOT_RUN'}
     if a.self_check_db:
         try: result['host_logic']=db.sqlite_self_check(a.self_check_db)
